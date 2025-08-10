@@ -6,7 +6,7 @@ import Link from "next/link";
 import { PiggyBank, ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 
 // Objeto de tradução para português
 const pt = {
@@ -19,7 +19,8 @@ const pt = {
   },
 };
 
-export default function ResetPasswordPage() {
+// Componente interno que usa useSearchParams
+function ResetPasswordContent() {
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -202,5 +203,26 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Loading component para o Suspense
+function ResetPasswordLoading() {
+  return (
+    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 px-4">
+      <div className="text-white text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
+        <p>Carregando...</p>
+      </div>
+    </div>
+  );
+}
+
+// Componente principal exportado com Suspense
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<ResetPasswordLoading />}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }
