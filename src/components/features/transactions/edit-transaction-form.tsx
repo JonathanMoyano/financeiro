@@ -8,7 +8,10 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarIcon, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+
+// CORREÇÃO: Importa a biblioteca moderna do Supabase e os tipos do DB.
+import { createBrowserClient } from '@supabase/ssr';
+import { Database } from "@/lib/database.types";
 
 import { updateTransaction } from "@/app/actions/transactions";
 import { cn } from "@/lib/utils";
@@ -36,7 +39,7 @@ const formSchema = z.object({
   description: z.string().min(1, { message: "Descrição é obrigatória." }),
   amount: z.coerce.number().positive({ message: "O valor deve ser um número positivo." }),
   type: z.enum(['income', 'expense']),
-  date: z.date(),
+  date: z.date({ required_error: "A data é obrigatória." }),
   categoryId: z.string().uuid().optional().nullable(),
 });
 
@@ -44,7 +47,14 @@ type FormValues = z.infer<typeof formSchema>;
 
 // Componente do Formulário de Edição
 export function EditTransactionForm({ transactionId, categories, onClose }: EditTransactionFormProps) {
-  const supabase = createClientComponentClient();
+  // CORREÇÃO: Cria o cliente Supabase de forma estável, apenas uma vez.
+  const [supabase] = React.useState(() =>
+    createBrowserClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+  );
+  
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -54,28 +64,42 @@ export function EditTransactionForm({ transactionId, categories, onClose }: Edit
 
   // Busca os dados da transação quando o componente é montado
   React.useEffect(() => {
-    if (!transactionId) return;
+    if (!transactionId) {
+        setIsLoading(false);
+        return;
+    };
 
     const fetchTransaction = async () => {
       setIsLoading(true);
-      const { data, error } = await supabase
-        .from("transactions")
-        .select("*")
-        .eq("id", transactionId)
-        .single();
+      try {
+        const { data, error } = await supabase
+            .from("transactions")
+            .select("description, amount, type, date, category_id")
+            .eq("id", transactionId)
+            .single();
 
-      if (data) {
-        form.reset({
-          ...data,
-          date: new Date(data.date),
-          categoryId: data.category_id,
-        });
+        if (error) throw error;
+
+        if (data) {
+            form.reset({
+                description: data.description || '',
+                amount: data.amount,
+                type: data.type as 'income' | 'expense',
+                date: new Date(data.date),
+                categoryId: data.category_id,
+            });
+        }
+      } catch (error) {
+        console.error("Erro ao buscar dados da transação:", error);
+        toast.error("Não foi possível carregar os dados da transação.");
+        onClose(); // Fecha o modal em caso de erro
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     fetchTransaction();
-  }, [transactionId, supabase, form]);
+  }, [transactionId, supabase, form, onClose]);
 
   // Função para submeter as alterações
   const onSubmit = async (data: FormValues) => {
@@ -85,7 +109,7 @@ export function EditTransactionForm({ transactionId, categories, onClose }: Edit
     try {
       const result = await updateTransaction({ id: transactionId, ...data });
       if (result.success) {
-        toast.success(result.message);
+        toast.success(result.message || "Transação atualizada com sucesso!");
         onClose();
       } else {
         toast.error(result.message || "Ocorreu um erro ao atualizar a transação.");
@@ -99,7 +123,7 @@ export function EditTransactionForm({ transactionId, categories, onClose }: Edit
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-8">
+      <div className="flex items-center justify-center p-8 min-h-[300px]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -193,9 +217,13 @@ export function EditTransactionForm({ transactionId, categories, onClose }: Edit
             )}
           />
         </div>
-        <Button type="submit" className="w-full" disabled={isSubmitting || isLoading}>
-          {isSubmitting ? "Salvando..." : "Salvar Alterações"}
-        </Button>
+        <div className="flex justify-end gap-2 pt-4">
+            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button type="submit" disabled={isSubmitting || isLoading}>
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Salvar Alterações
+            </Button>
+        </div>
       </form>
     </Form>
   )

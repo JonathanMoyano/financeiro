@@ -1,12 +1,16 @@
+// app/auth/callback/route.ts
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get('code')
-  const type = searchParams.get('type')
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+  const type = requestUrl.searchParams.get('type')
+  const origin = requestUrl.origin
+
+  console.log('Callback recebido:', { code: !!code, type, origin })
 
   if (code) {
     const cookieStore = cookies()
@@ -27,19 +31,32 @@ export async function GET(request: NextRequest) {
         },
       }
     )
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
-      // Se o tipo for 'recovery', é um fluxo de recuperação de senha.
+
+    try {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+      
+      if (error) {
+        console.error('Erro ao trocar código por sessão:', error)
+        return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent('Erro de autenticação: ' + error.message)}`)
+      }
+
+      console.log('Sessão criada com sucesso:', { user: data.user?.email })
+
+      // Se o tipo for 'recovery', é um fluxo de recuperação de senha
       if (type === 'recovery') {
-        // Redireciona para a página de perfil para o utilizador definir uma nova senha.
         return NextResponse.redirect(`${origin}/configuracoes/perfil`)
       }
-      // Para login/cadastro normal, redireciona para o dashboard.
+
+      // Para login/cadastro normal, redireciona para o dashboard
       return NextResponse.redirect(`${origin}/dashboard`)
+      
+    } catch (error) {
+      console.error('Erro inesperado no callback:', error)
+      return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent('Erro inesperado durante a autenticação')}`)
     }
   }
 
-  // Se houver um erro, redireciona para a página de login com uma mensagem.
-  console.error("Erro no callback de autenticação:", "Código inválido ou em falta.");
-  return NextResponse.redirect(`${origin}/login?error=Não foi possível autenticar. O link pode ter expirado.`)
+  // Se não houver código, redireciona para login
+  console.warn('Callback sem código de autorização')
+  return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent('Código de autorização em falta')}`)
 }

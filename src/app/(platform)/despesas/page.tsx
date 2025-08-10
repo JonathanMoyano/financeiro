@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase, getCachedData, setCachedData, invalidateCache } from '@/lib/supabase';
 import { useFormState, useFormStatus } from 'react-dom';
 import { PlusCircle, Loader2, ArrowUpCircle, ArrowDownCircle, MoreHorizontal, Edit, Trash2 } from 'lucide-react';
 import {
@@ -58,18 +58,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from 'sonner';
 import { createTransaction, deleteTransaction } from '@/app/actions/transactions';
-import { cn } from '@/lib/utils';
 
 // Tipos de dados
+// <<< CORREÇÃO DE TIPAGEM >>> O tipo foi ajustado para aceitar `null` nos campos que podem vir nulos do banco de dados.
 type Transaction = {
   id: string;
-  created_at?: string;
-  description: string;
+  created_at: string;
+  description: string | null;
   amount: number;
   type: 'income' | 'expense';
-  category_id?: string;
-  user_id?: string;
-  categories?: { name: string }; 
+  category_id: string | null;
+  user_id: string;
+  categories: { name: string } | null;
 };
 
 type Category = {
@@ -83,7 +83,7 @@ type ActionResult = {
   errors?: Record<string, string[]>;
 };
 
-// Componente do botão de submissão para mostrar estado de loading
+// Componente do botão de submissão
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
@@ -94,37 +94,37 @@ function SubmitButton() {
   );
 }
 
-// Componente para as ações da transação - CORRIGIDO
-function TransactionActions({ 
-  transaction, 
-  onEdit, 
-  onDelete 
-}: { 
-  transaction: Transaction; 
+// Componente otimizado para as ações da transação
+function TransactionActions({
+  transaction,
+  onEdit,
+  onDelete
+}: {
+  transaction: Transaction;
   onEdit: (transaction: Transaction) => void;
   onDelete: (transaction: Transaction) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  
-  const handleEdit = (e: React.MouseEvent) => {
+
+  const handleEdit = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsOpen(false);
     onEdit(transaction);
-  };
+  }, [transaction, onEdit]);
 
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleDelete = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsOpen(false);
     onDelete(transaction);
-  };
+  }, [transaction, onDelete]);
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>
-        <Button 
-          variant="ghost" 
+        <Button
+          variant="ghost"
           className="h-8 w-8 p-0 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}
         >
@@ -132,19 +132,19 @@ function TransactionActions({
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent 
-        align="end" 
+      <DropdownMenuContent
+        align="end"
         className="w-40"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
-        <DropdownMenuItem 
+        <DropdownMenuItem
           onClick={handleEdit}
           className="cursor-pointer focus:bg-accent"
         >
           <Edit className="mr-2 h-4 w-4" />
           Editar
         </DropdownMenuItem>
-        <DropdownMenuItem 
+        <DropdownMenuItem
           onClick={handleDelete}
           className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/20"
         >
@@ -157,12 +157,12 @@ function TransactionActions({
 }
 
 // Componente para confirmar exclusão
-function DeleteConfirmDialog({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
+function DeleteConfirmDialog({
+  isOpen,
+  onClose,
+  onConfirm,
   transaction,
-  isDeleting 
+  isDeleting
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -184,8 +184,8 @@ function DeleteConfirmDialog({
           <AlertDialogCancel onClick={onClose} disabled={isDeleting}>
             Cancelar
           </AlertDialogCancel>
-          <AlertDialogAction 
-            onClick={onConfirm} 
+          <AlertDialogAction
+            onClick={onConfirm}
             disabled={isDeleting}
             className="bg-red-600 hover:bg-red-700"
           >
@@ -198,13 +198,167 @@ function DeleteConfirmDialog({
   );
 }
 
-export default function TransactionsPage() {
-  const supabase = createClientComponentClient();
+// Hook personalizado para gerenciar dados com cache
+function useTransactionsData(userId: string | undefined) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async (currentUserId: string, forceRefresh = false) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const transactionsKey = `transactions-${currentUserId}`;
+      const categoriesKey = `categories-${currentUserId}`;
+
+      if (!forceRefresh) {
+        const cachedTransactions = getCachedData<Transaction[]>(transactionsKey);
+        const cachedCategories = getCachedData<Category[]>(categoriesKey);
+
+        if (cachedTransactions && cachedCategories) {
+          setTransactions(cachedTransactions);
+          setCategories(cachedCategories);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      const [transactionsResponse, categoriesResponse] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('*, categories(name)')
+          .eq('user_id', currentUserId)
+          .order('created_at', { ascending: false })
+          .limit(100),
+        
+        supabase
+          .from('categories')
+          .select('id, name')
+          .eq('user_id', currentUserId)
+      ]);
+
+      if (transactionsResponse.error) {
+        throw new Error('Erro ao buscar transações: ' + transactionsResponse.error.message);
+      }
+      if (categoriesResponse.error) {
+        throw new Error('Erro ao buscar categorias: ' + categoriesResponse.error.message);
+      }
+
+      const transactionsData = (transactionsResponse.data && Array.isArray(transactionsResponse.data)) 
+        ? transactionsResponse.data 
+        : [];
+      
+      const categoriesData = (categoriesResponse.data && Array.isArray(categoriesResponse.data)) 
+        ? categoriesResponse.data 
+        : [];
+
+      // <<< CORREÇÃO DE TIPAGEM >>> Adicionado 'as Transaction[]' para que o TypeScript confie que os dados correspondem ao nosso tipo.
+      setTransactions(transactionsData as Transaction[]);
+      setCategories(categoriesData as Category[]);
+
+      setCachedData(transactionsKey, transactionsData, 300000);
+      setCachedData(categoriesKey, categoriesData, 300000);
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
+      setError(errorMessage);
+      console.error('Erro ao buscar dados:', err);
+      toast.error(errorMessage);
+      
+      setTransactions([]);
+      setCategories([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const refreshData = useCallback((currentUserId: string) => {
+    invalidateCache([`transactions-${currentUserId}`, `categories-${currentUserId}`]);
+    return fetchData(currentUserId, true);
+  }, [fetchData]);
+
+  return {
+    transactions,
+    categories,
+    isLoading,
+    error,
+    fetchData,
+    refreshData,
+    setTransactions,
+    setCategories
+  };
+}
+
+// Hook personalizado para autenticação
+function useAuth() {
+  const [user, setUser] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const checkAuth = async () => {
+      try {
+        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError) {
+          throw authError;
+        }
+
+        if (mounted) {
+          setUser(currentUser);
+          setError(null);
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Erro de autenticação';
+        if (mounted) {
+          setError(errorMessage);
+          setUser(null);
+        }
+        console.error('Erro de autenticação:', err);
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (mounted) {
+          setUser(session?.user || null);
+          setError(null);
+          setIsLoading(false);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  return { user, isLoading, error };
+}
+
+export default function TransactionsPage() {
+  const { user, isLoading: authLoading, error: authError } = useAuth();
+  const { 
+    transactions, 
+    categories, 
+    isLoading: dataLoading, 
+    error: dataError,
+    fetchData,
+    refreshData 
+  } = useTransactionsData(user?.id);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{
     isOpen: boolean;
     transaction: Transaction | null;
@@ -216,89 +370,43 @@ export default function TransactionsPage() {
   });
   
   const formRef = useRef<HTMLFormElement>(null);
-  
   const initialState = { message: "", errors: {}, success: false };
   const [state, formAction] = useFormState(createTransaction, initialState);
 
-  const fetchData = useCallback(async (currentUserId: string) => {
-    try {
-      const { data: transData, error: transError } = await supabase
-        .from('transactions')
-        .select('*, categories(name)')
-        .eq('user_id', currentUserId)
-        .order('created_at', { ascending: false });
-
-      if (transError) {
-        console.error('Erro ao buscar transações:', transError);
-        toast.error('Erro ao carregar transações');
-      } else {
-        setTransactions(transData || []);
-      }
-
-      const { data: catData, error: catError } = await supabase
-        .from('categories')
-        .select('id, name')
-        .eq('user_id', currentUserId);
-
-      if (catError) {
-        console.error('Erro ao buscar categorias:', catError);
-        toast.error('Erro ao carregar categorias');
-      } else {
-        setCategories(catData || []);
-      }
-    } catch (error) {
-      console.error('Erro geral:', error);
-      toast.error('Erro ao carregar dados');
-    }
-  }, [supabase]);
-
   useEffect(() => {
-    const checkUser = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setUserId(user.id);
-          await fetchData(user.id);
-        }
-      } catch (error) {
-        console.error('Erro ao verificar usuário:', error);
-        toast.error('Erro de autenticação');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    checkUser();
-  }, [supabase, fetchData]);
+    if (user?.id) {
+      fetchData(user.id);
+    }
+  }, [user?.id, fetchData]);
 
   useEffect(() => {
     if (state.success) {
       setIsModalOpen(false);
       formRef.current?.reset();
       toast.success(state.message || 'Transação criada com sucesso!');
-      if (userId) {
-        fetchData(userId); // Recarregar dados após criar transação
+      if (user?.id) {
+        refreshData(user.id);
       }
-    } else if (state.message && !state.success) {
+    } else if (state.message && !state.success && Object.keys(state.errors || {}).length === 0) {
       toast.error(state.message);
     }
-  }, [state, userId, fetchData]);
+  }, [state, user?.id, refreshData]);
 
-  const handleEdit = (transaction: Transaction) => {
+  const handleEdit = useCallback((transaction: Transaction) => {
     console.log('Editar transação:', transaction);
     toast.info('Função de edição em desenvolvimento');
-    // Implementar lógica de edição aqui
-  };
+  }, []);
 
-  const handleDelete = (transaction: Transaction) => {
+  const handleDelete = useCallback((transaction: Transaction) => {
     setDeleteDialog({
       isOpen: true,
       transaction,
       isDeleting: false
     });
-  };
+  }, []);
 
-  const confirmDelete = async () => {
-    if (!deleteDialog.transaction) return;
+  const confirmDelete = useCallback(async () => {
+    if (!deleteDialog.transaction || !user?.id) return;
 
     setDeleteDialog(prev => ({ ...prev, isDeleting: true }));
 
@@ -307,9 +415,7 @@ export default function TransactionsPage() {
       
       if (result.success) {
         toast.success(result.message || 'Transação excluída com sucesso!');
-        if (userId) {
-          await fetchData(userId); // Recarregar dados
-        }
+        await refreshData(user.id);
         setDeleteDialog({
           isOpen: false,
           transaction: null,
@@ -324,36 +430,63 @@ export default function TransactionsPage() {
       toast.error('Erro ao excluir transação');
       setDeleteDialog(prev => ({ ...prev, isDeleting: false }));
     }
-  };
+  }, [deleteDialog.transaction, user?.id, refreshData]);
 
-  const { incomeTransactions, expenseTransactions, totalIncome, totalExpenses, balance } = useMemo(() => {
-    const incomeTransactions = transactions.filter(t => t.type === 'income');
-    const expenseTransactions = transactions.filter(t => t.type === 'expense');
+  const financialSummary = useMemo(() => {
+    const validTransactions = Array.isArray(transactions) ? transactions : [];
     
-    const totalIncome = incomeTransactions.reduce((acc, t) => acc + t.amount, 0);
-    const totalExpenses = expenseTransactions.reduce((acc, t) => acc + t.amount, 0);
+    const incomeTransactions = validTransactions.filter(t => t.type === 'income');
+    const expenseTransactions = validTransactions.filter(t => t.type === 'expense');
+    
+    const totalIncome = incomeTransactions.reduce((acc, t) => acc + (typeof t.amount === 'number' ? t.amount : 0), 0);
+    const totalExpenses = expenseTransactions.reduce((acc, t) => acc + (typeof t.amount === 'number' ? t.amount : 0), 0);
     const balance = totalIncome - totalExpenses;
 
     return { incomeTransactions, expenseTransactions, totalIncome, totalExpenses, balance };
   }, [transactions]);
-  
-  if (isLoading) {
+
+  if (authLoading || (user && dataLoading)) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Carregando transações...</p>
+          <p className="text-muted-foreground">
+            {authLoading ? 'Verificando autenticação...' : 'Carregando transações...'}
+          </p>
         </div>
       </div>
     );
   }
 
-  if (!userId) {
+  if (authError || dataError) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <p className="text-red-500 mb-2">Utilizador não autenticado</p>
-          <p className="text-muted-foreground text-sm">Por favor, faça login para continuar.</p>
+        <div className="text-center space-y-4">
+          <div className="text-red-500 text-lg font-medium">
+            {authError ? 'Erro de autenticação' : 'Erro ao carregar dados'}
+          </div>
+          <p className="text-muted-foreground text-sm">
+            {authError || dataError}
+          </p>
+          <Button onClick={() => window.location.reload()}>
+            Tentar Novamente
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex-1 flex items-center justify-center min-h-[400px]">
+        <div className="text-center space-y-4">
+          <div className="text-red-500 text-lg font-medium">Usuário não autenticado</div>
+          <p className="text-muted-foreground text-sm">
+            Por favor, faça login para acessar suas transações.
+          </p>
+          <Button onClick={() => window.location.href = '/login'}>
+            Fazer Login
+          </Button>
         </div>
       </div>
     );
@@ -464,7 +597,7 @@ export default function TransactionsPage() {
                       <SelectValue placeholder="Selecione a categoria" />
                     </SelectTrigger>
                     <SelectContent>
-                      {categories.map(cat => (
+                      {Array.isArray(categories) && categories.map(cat => (
                         <SelectItem key={cat.id} value={cat.id}>
                           {cat.name}
                         </SelectItem>
@@ -478,7 +611,7 @@ export default function TransactionsPage() {
                   )}
                 </div>
               </div>
-              {state.message && !state.success && (
+              {state.message && !state.success && Object.keys(state.errors || {}).length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
                   <p className="text-sm text-red-600">{state.message}</p>
                 </div>
@@ -506,19 +639,19 @@ export default function TransactionsPage() {
             <div className="text-center p-4 rounded-lg bg-green-100 dark:bg-green-900/20">
               <p className="text-sm text-green-600 dark:text-green-400 font-medium">Receitas</p>
               <p className="text-2xl font-bold text-green-700 dark:text-green-300">
-                R$ {totalIncome.toFixed(2)}
+                R$ {financialSummary.totalIncome.toFixed(2)}
               </p>
             </div>
             <div className="text-center p-4 rounded-lg bg-red-100 dark:bg-red-900/20">
               <p className="text-sm text-red-600 dark:text-red-400 font-medium">Despesas</p>
               <p className="text-2xl font-bold text-red-700 dark:text-red-300">
-                R$ {totalExpenses.toFixed(2)}
+                R$ {financialSummary.totalExpenses.toFixed(2)}
               </p>
             </div>
             <div className="text-center p-4 rounded-lg bg-blue-100 dark:bg-blue-900/20">
               <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Saldo</p>
-              <p className={`text-2xl font-bold ${balance >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
-                R$ {balance.toFixed(2)}
+              <p className={`text-2xl font-bold ${financialSummary.balance >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                R$ {financialSummary.balance.toFixed(2)}
               </p>
             </div>
           </div>
@@ -548,7 +681,7 @@ export default function TransactionsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {incomeTransactions.length > 0 ? incomeTransactions.map((transaction) => (
+                  {financialSummary.incomeTransactions.length > 0 ? financialSummary.incomeTransactions.map((transaction) => (
                     <TableRow key={transaction.id} className="group hover:bg-muted/50">
                       <TableCell className="font-medium">
                         {transaction.description}
@@ -585,7 +718,7 @@ export default function TransactionsPage() {
             <div className="flex w-full justify-between items-center text-lg font-bold">
               <span>Total:</span>
               <span className="text-green-600 dark:text-green-500">
-                R$ {totalIncome.toFixed(2)}
+                R$ {financialSummary.totalIncome.toFixed(2)}
               </span>
             </div>
           </CardFooter>
@@ -612,7 +745,7 @@ export default function TransactionsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {expenseTransactions.length > 0 ? expenseTransactions.map((transaction) => (
+                  {financialSummary.expenseTransactions.length > 0 ? financialSummary.expenseTransactions.map((transaction) => (
                     <TableRow key={transaction.id} className="group hover:bg-muted/50">
                       <TableCell className="font-medium">
                         {transaction.description}
@@ -649,7 +782,7 @@ export default function TransactionsPage() {
             <div className="flex w-full justify-between items-center text-lg font-bold">
               <span>Total:</span>
               <span className="text-red-600 dark:text-red-500">
-                R$ {totalExpenses.toFixed(2)}
+                R$ {financialSummary.totalExpenses.toFixed(2)}
               </span>
             </div>
           </CardFooter>

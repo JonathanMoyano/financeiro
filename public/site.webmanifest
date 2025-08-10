@@ -1,0 +1,85 @@
+{
+  "name": "Meu Financeiro",
+  "short_name": "MeuFinanceiro",
+  "description": "Controle suas finanças pessoais com facilidade e inteligência",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1b3a",
+  "theme_color": "#1a1b3a",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "categories": ["finance", "business", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop-dashboard.png",
+      "type": "image/png",
+      "sizes": "1280x720",
+      "form_factor": "wide",
+      "label": "Dashboard principal do Meu Financeiro"
+    },
+    {
+      "src": "/screenshots/mobile-transactions.png",
+      "type": "image/png",
+      "sizes": "375x812",
+      "form_factor": "narrow",
+      "label": "Lista de transações no mobile"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nova Transação",
+      "short_name": "Nova",
+      "description": "Adicionar uma nova transação",
+      "url": "/dashboard/transacoes/nova",
+      "icons": [
+        {
+          "src": "/icons/add-transaction.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Relatórios",
+      "short_name": "Relatórios",
+      "description": "Ver relatórios financeiros",
+      "url": "/dashboard/relatorios",
+      "icons": [
+        {
+          "src": "/icons/reports.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ]
+}

@@ -1,9 +1,8 @@
-// src/app/actions/profile.ts
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerActionClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+// CORREÇÃO: Importa a função correta da biblioteca moderna @supabase/ssr, que está no seu arquivo server.ts
+import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
 import { Database } from "@/lib/database.types";
 
@@ -15,7 +14,8 @@ const updateProfileSchema = z.object({
 });
 
 export async function updateProfile(prevState: any, formData: FormData) {
-  const supabase = createServerActionClient<Database>({ cookies });
+  // CORREÇÃO: Usa a nova função para criar o cliente Supabase
+  const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
@@ -38,7 +38,7 @@ export async function updateProfile(prevState: any, formData: FormData) {
 
   const { error } = await supabase
     .from("profiles")
-    .update({ full_name: fullName })
+    .update({ full_name: fullName, updated_at: new Date().toISOString() }) // É uma boa prática atualizar a data de modificação
     .eq("id", user.id);
 
   if (error) {
@@ -48,7 +48,7 @@ export async function updateProfile(prevState: any, formData: FormData) {
     };
   }
 
-  revalidatePath("/perfil");
+  revalidatePath("/configuracoes/perfil"); // Corrigido para o caminho correto da página
   return { success: true, message: "Perfil atualizado com sucesso!" };
 }
 
@@ -57,7 +57,7 @@ export async function updateProfile(prevState: any, formData: FormData) {
 // 2. AÇÃO PARA ATUALIZAR A SENHA
 // =================================================================
 const updatePasswordSchema = z.object({
-  password: z.string().min(6, { message: "A senha deve ter no mínimo 6 caracteres." }),
+  password: z.string().min(8, { message: "A senha deve ter no mínimo 8 caracteres." }),
   confirmPassword: z.string(),
 }).refine(data => data.password === data.confirmPassword, {
   message: "As senhas não coincidem.",
@@ -66,12 +66,11 @@ const updatePasswordSchema = z.object({
 
 
 export async function updatePassword(prevState: any, formData: FormData) {
-    const supabase = createServerActionClient({ cookies });
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-        return { success: false, message: "Utilizador não autenticado." };
-    }
+    // CORREÇÃO: Usa a nova função para criar o cliente Supabase
+    const supabase = createClient();
+    
+    // A verificação de usuário já acontece implicitamente na função `updateUser`
+    // mas é bom manter para consistência, se desejar.
 
     const validatedFields = updatePasswordSchema.safeParse({
         password: formData.get("password"),
@@ -97,5 +96,5 @@ export async function updatePassword(prevState: any, formData: FormData) {
         };
     }
 
-    return { success: true, message: "Senha atualizada com sucesso!" };
+    return { success: true, message: "Senha atualizada com sucesso! Você pode ser desconectado de outros dispositivos." };
 }

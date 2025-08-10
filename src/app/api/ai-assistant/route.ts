@@ -54,7 +54,7 @@ export async function POST(req: Request) {
 
     // 5. Preparar e enviar o pedido para a IA do Google
     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
     const prompt = `
       Você é um assistente financeiro especialista. Analise os seguintes dados de transações de um utilizador e responda à pergunta dele de forma clara, objetiva e útil.

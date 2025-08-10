@@ -2,60 +2,613 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Variáveis de cores personalizadas */
 @layer base {
-  .dark {
-    --background: 258 50% 10%; /* fundo roxo escuro */
-    --foreground: 0 0% 100%;
-    --card: 258 50% 15%;
-    --card-foreground: 0 0% 100%;
-    --popover: 258 50% 15%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 258 100% 50%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 258 30% 25%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 258 30% 20%;
-    --muted-foreground: 0 0% 80%;
-    --accent: 258 30% 25%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 100% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 258 30% 25%;
-    --input: 258 30% 25%;
-    --ring: 258 100% 50%;
-  }
-
-  .light {
+  :root {
+    --font-inter: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    
+    /* Cores para tema claro */
     --background: 0 0% 100%;
     --foreground: 258 50% 10%;
     --card: 0 0% 100%;
     --card-foreground: 258 50% 10%;
     --popover: 0 0% 100%;
     --popover-foreground: 258 50% 10%;
-    --primary: 258 100% 50%;
+    --primary: 160 100% 45%; /* Verde neon */
     --primary-foreground: 0 0% 100%;
-    --secondary: 258 30% 90%;
+    --secondary: 258 30% 96%;
     --secondary-foreground: 258 50% 10%;
-    --muted: 258 30% 95%;
-    --muted-foreground: 258 30% 40%;
-    --accent: 258 30% 90%;
+    --muted: 258 30% 96%;
+    --muted-foreground: 258 30% 45%;
+    --accent: 160 100% 94%;
     --accent-foreground: 258 50% 10%;
-    --destructive: 0 100% 50%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
     --border: 258 30% 90%;
     --input: 258 30% 90%;
-    --ring: 258 100% 50%;
+    --ring: 160 100% 45%;
+    --radius: 0.75rem;
+    
+    /* Cores customizadas */
+    --neon-green: 160 100% 45%;
+    --purple-start: 258 100% 35%;
+    --purple-end: 285 100% 25%;
+    --gradient-primary: linear-gradient(135deg, hsl(258 100% 35%) 0%, hsl(285 100% 25%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(160 100% 45%) 0%, hsl(160 100% 35%) 100%);
+    
+    /* Grid pattern */
+    --grid-color: 258 30% 95%;
+  }
+
+  .dark {
+    /* Cores para tema escuro - Roxo com verde neon */
+    --background: 258 100% 8%; /* Roxo escuro profundo */
+    --foreground: 0 0% 98%;
+    --card: 258 80% 12%; /* Roxo escuro para cards */
+    --card-foreground: 0 0% 98%;
+    --popover: 258 80% 12%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 160 100% 50%; /* Verde neon mais vibrante */
+    --primary-foreground: 258 100% 8%;
+    --secondary: 258 60% 18%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 258 60% 15%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 160 100% 15%;
+    --accent-foreground: 160 100% 50%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 258 50% 25%;
+    --input: 258 50% 20%;
+    --ring: 160 100% 50%;
+    
+    /* Cores customizadas para dark mode */
+    --neon-green: 160 100% 50%;
+    --purple-start: 258 100% 15%;
+    --purple-end: 285 100% 10%;
+    --gradient-primary: linear-gradient(135deg, hsl(258 100% 15%) 0%, hsl(285 100% 10%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(160 100% 50%) 0%, hsl(160 100% 40%) 100%);
+    
+    /* Grid pattern */
+    --grid-color: 258 60% 12%;
   }
 }
 
-/* Fontes, reset e ajustes globais */
-html, body {
-  @apply bg-background text-foreground;
-  font-family: sans-serif;
-  margin: 0;
-  padding: 0;
+/* Reset e configurações base */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  html {
+    @apply scroll-smooth;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-variation-settings: normal;
+  }
+  
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: var(--font-inter, ui-sans-serif, system-ui, sans-serif);
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  
+  /* Headings otimizados */
+  h1, h2, h3, h4, h5, h6 {
+    @apply scroll-m-20 font-semibold tracking-tight;
+    font-variation-settings: 'wght' 600;
+    line-height: 1.25;
+  }
+  
+  h1 {
+    @apply text-4xl lg:text-5xl;
+  }
+  
+  h2 {
+    @apply text-3xl lg:text-4xl;
+  }
+  
+  h3 {
+    @apply text-2xl lg:text-3xl;
+  }
+  
+  h4 {
+    @apply text-xl lg:text-2xl;
+  }
+  
+  /* Parágrafos e texto */
+  p {
+    @apply leading-7;
+  }
+  
+  /* Links */
+  a {
+    @apply transition-colors duration-200;
+  }
+  
+  /* Inputs e form elements */
+  input, textarea, select {
+    @apply transition-colors duration-200;
+  }
+  
+  /* Focus states melhorados */
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  [tabindex]:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
 }
 
-* {
-  @apply border-border;
+/* Componentes personalizados */
+@layer components {
+  /* Container responsivo */
+  .container {
+    @apply w-full mx-auto px-4 sm:px-6 lg:px-8;
+    max-width: 1400px;
+  }
+  
+  /* Grid pattern background */
+  .bg-grid-black {
+    background-image: radial-gradient(circle, hsl(var(--grid-color)) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  
+  .bg-grid-white {
+    background-image: radial-gradient(circle, hsl(var(--grid-color)) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  
+  /* Card melhorado */
+  .card {
+    @apply rounded-xl border bg-card text-card-foreground shadow-sm backdrop-blur-sm;
+  }
+  
+  .card-header {
+    @apply flex flex-col space-y-1.5 p-6;
+  }
+  
+  .card-body {
+    @apply p-6 pt-0;
+  }
+  
+  .card-footer {
+    @apply flex items-center p-6 pt-0;
+  }
+  
+  /* Button variants com cores neon */
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+  }
+  
+  .btn-primary {
+    background: var(--gradient-accent);
+    @apply text-primary-foreground shadow-lg hover:scale-[1.02] active:scale-[0.98];
+    box-shadow: 0 4px 20px hsl(var(--neon-green) / 0.3);
+  }
+  
+  .btn-primary:hover {
+    box-shadow: 0 8px 25px hsl(var(--neon-green) / 0.4);
+    filter: brightness(1.1);
+  }
+  
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border hover:border-border/80;
+  }
+  
+  .btn-ghost {
+    @apply hover:bg-accent hover:text-accent-foreground hover:scale-[1.02] active:scale-[0.98];
+  }
+  
+  /* Glass effect com tema roxo/verde */
+  .glass {
+    background: linear-gradient(135deg, 
+      hsl(var(--background) / 0.8) 0%, 
+      hsl(var(--card) / 0.6) 100%);
+    @apply backdrop-blur-xl border border-border/30;
+    box-shadow: 0 8px 32px hsl(var(--purple-start) / 0.1);
+  }
+  
+  .glass-card {
+    background: linear-gradient(135deg, 
+      hsl(var(--card) / 0.9) 0%, 
+      hsl(var(--background) / 0.8) 100%);
+    @apply backdrop-blur-xl border border-border/40 shadow-xl;
+    box-shadow: 
+      0 8px 32px hsl(var(--purple-start) / 0.15),
+      0 0 0 1px hsl(var(--neon-green) / 0.1);
+  }
+  
+  /* Neon glow effects */
+  .neon-glow {
+    box-shadow: 
+      0 0 5px hsl(var(--neon-green) / 0.5),
+      0 0 10px hsl(var(--neon-green) / 0.3),
+      0 0 15px hsl(var(--neon-green) / 0.2);
+  }
+  
+  .neon-glow:hover {
+    box-shadow: 
+      0 0 8px hsl(var(--neon-green) / 0.6),
+      0 0 15px hsl(var(--neon-green) / 0.4),
+      0 0 20px hsl(var(--neon-green) / 0.3);
+  }
+  
+  .neon-text {
+    color: hsl(var(--neon-green));
+    text-shadow: 
+      0 0 5px hsl(var(--neon-green) / 0.5),
+      0 0 10px hsl(var(--neon-green) / 0.3);
+  }
+  
+  .neon-border {
+    border: 1px solid hsl(var(--neon-green) / 0.3);
+    box-shadow: 
+      inset 0 0 10px hsl(var(--neon-green) / 0.1),
+      0 0 15px hsl(var(--neon-green) / 0.2);
+  }
+  
+  .purple-gradient {
+    background: var(--gradient-primary);
+  }
+  
+  .green-gradient {
+    background: var(--gradient-accent);
+  }
+  
+  .neon-pulse {
+    animation: neonPulse 2s ease-in-out infinite alternate;
+  }
+  
+  /* Improved glass effects with neon accents */
+  .glass-neon {
+    background: linear-gradient(135deg, 
+      hsl(var(--background) / 0.8) 0%, 
+      hsl(var(--card) / 0.6) 100%);
+    @apply backdrop-blur-xl border neon-border;
+    box-shadow: 
+      0 8px 32px hsl(var(--purple-start) / 0.2),
+      inset 0 0 20px hsl(var(--neon-green) / 0.05);
+  }
+  
+  /* Loading states */
+  .loading {
+    @apply animate-pulse;
+  }
+  
+  /* Skeleton */
+  .skeleton {
+    @apply animate-pulse rounded-md bg-muted/50;
+  }
+  
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
+  }
+  
+  .badge-primary {
+    @apply border-transparent bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+  
+  .badge-secondary {
+    @apply border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+  
+  .badge-destructive {
+    @apply border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90;
+  }
+  
+  /* Status indicators */
+  .status-online {
+    @apply bg-emerald-500 animate-pulse;
+  }
+  
+  .status-offline {
+    @apply bg-gray-400;
+  }
+  
+  .status-warning {
+    @apply bg-yellow-500;
+  }
+  
+  .status-error {
+    @apply bg-red-500;
+  }
+}
+
+/* Utilities personalizados */
+@layer utilities {
+  /* Scrollbar customizado */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  
+  .scrollbar-track-transparent {
+    scrollbar-color: transparent transparent;
+  }
+  
+  .scrollbar-thumb-border {
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  
+  .scrollbar-thumb-border:hover {
+    scrollbar-color: hsl(var(--border) / 0.8) transparent;
+  }
+  
+  /* Webkit scrollbar */
+  .scrollbar-webkit {
+    &::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+      background: hsl(var(--border));
+      border-radius: 3px;
+    }
+    
+    &::-webkit-scrollbar-thumb:hover {
+      background: hsl(var(--border) / 0.8);
+    }
+  }
+  
+  /* Text utilities */
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent;
+  }
+  
+  /* Animation utilities */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+  
+  .animate-scale-in {
+    animation: scaleIn 0.2s ease-out;
+  }
+  
+  /* Glass effect */
+  .glass {
+    @apply backdrop-blur-xl bg-background/80 border border-border/50;
+  }
+  
+  .glass-card {
+    @apply backdrop-blur-xl bg-card/80 border border-border/50 shadow-xl;
+  }
+  
+  /* Layout utilities */
+  .center {
+    @apply flex items-center justify-center;
+  }
+  
+  .center-col {
+    @apply flex flex-col items-center justify-center;
+  }
+  
+  .between {
+    @apply flex items-center justify-between;
+  }
+  
+  /* Responsive spacing */
+  .section-padding {
+    @apply px-4 py-8 sm:px-6 sm:py-12 lg:px-8 lg:py-16;
+  }
+  
+  .content-padding {
+    @apply px-4 py-6 sm:px-6 lg:px-8;
+  }
+}
+
+/* Animações personalizadas */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes neonPulse {
+  0% {
+    box-shadow: 
+      0 0 5px hsl(var(--neon-green) / 0.4),
+      0 0 10px hsl(var(--neon-green) / 0.2),
+      0 0 15px hsl(var(--neon-green) / 0.1);
+  }
+  100% {
+    box-shadow: 
+      0 0 8px hsl(var(--neon-green) / 0.6),
+      0 0 15px hsl(var(--neon-green) / 0.4),
+      0 0 25px hsl(var(--neon-green) / 0.2);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Media queries customizadas */
+@media (max-width: 640px) {
+  .mobile-hidden {
+    @apply hidden;
+  }
+  
+  .mobile-full {
+    @apply w-full;
+  }
+  
+  .mobile-padding {
+    @apply px-4 py-4;
+  }
+}
+
+@media (min-width: 768px) {
+  .tablet-visible {
+    @apply block;
+  }
+}
+
+@media (min-width: 1024px) {
+  .desktop-visible {
+    @apply block;
+  }
+  
+  .desktop-grid {
+    @apply grid-cols-3;
+  }
+}
+
+/* Print styles */
+@media print {
+  .print-hidden {
+    @apply hidden;
+  }
+  
+  .print-visible {
+    @apply block;
+  }
+  
+  * {
+    @apply text-black bg-white;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .btn {
+    @apply border-2 border-current;
+  }
+  
+  .card {
+    @apply border-2;
+  }
+}
+
+/* Dark theme específico para webkit */
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--border) / 0.8);
+  }
+}
+
+/* Selection customizado */
+::selection {
+  background: hsl(var(--primary) / 0.2);
+  color: hsl(var(--primary-foreground));
+}
+
+::-moz-selection {
+  background: hsl(var(--primary) / 0.2);
+  color: hsl(var(--primary-foreground));
+}
+
+@media print {
+  /* Esconde o corpo principal e mostra apenas a área do relatório */
+  body > div > aside, /* Esconde a barra lateral (sidebar) */
+  body > div > div > header { /* Esconde o cabeçalho principal */
+    display: none !important;
+  }
+
+  /* Foca na área de conteúdo principal */
+  body > div > div > main {
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+  }
+
+  /* Esconde elementos de UI desnecessários na impressão */
+  .print-hidden {
+    display: none !important;
+  }
+  
+  /* Garante que todo o conteúdo seja visível e empilhado */
+  .print-show-all > div {
+    display: block !important;
+    break-inside: avoid; /* Tenta evitar que um card seja cortado entre duas páginas */
+  }
+
+  /* Ajusta o layout dos cards e gráficos para impressão */
+  .print-stack-cards, .print-stack-charts {
+    grid-template-columns: 1fr !important;
+    gap: 2rem !important;
+  }
+
+  /* Garante que as cores e fundos dos gráficos sejam impressos */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color: #000 !important; /* Força o texto a ser preto para melhor legibilidade */
+    background-color: #fff !important; /* Fundo branco */
+  }
+
+  /* Remove sombras e bordas excessivas */
+  .card-print {
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+  }
 }

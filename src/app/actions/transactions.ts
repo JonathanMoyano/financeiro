@@ -1,9 +1,7 @@
-// src/app/actions/transactions.ts
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerActionClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
 import { Database } from "@/lib/database.types";
 
@@ -13,14 +11,14 @@ import { Database } from "@/lib/database.types";
 const createTransactionSchema = z.object({
   description: z.string().min(1, { message: "Descrição é obrigatória." }),
   amount: z.coerce.number().positive({ message: "O valor deve ser positivo." }),
-  type: z.enum(["income", "expense"], { required_error: "Tipo é obrigatório."}),
+  type: z.enum(["income", "expense"], { required_error: "Tipo é obrigatório." }),
   date: z.coerce.date(),
   categoryId: z.string().uuid({ message: "Por favor, selecione uma categoria." }).optional().or(z.literal('')),
 });
 
-// CORREÇÃO: A função agora aceita 'prevState' como o primeiro argumento.
 export async function createTransaction(prevState: any, formData: FormData) {
-  const supabase = createServerActionClient<Database>({ cookies });
+  const supabase = createClient();
+
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
@@ -51,11 +49,11 @@ export async function createTransaction(prevState: any, formData: FormData) {
     amount,
     type,
     date: date.toISOString(),
-    // Garante que o categoryId seja null se não for fornecido
     category_id: categoryId || null,
   });
 
   if (error) {
+    console.error("Supabase error creating transaction:", error);
     return {
       success: false,
       message: `Erro ao criar transação: ${error.message}`,
@@ -72,54 +70,58 @@ export async function createTransaction(prevState: any, formData: FormData) {
 // =================================================================
 const updateTransactionSchema = z.object({
   id: z.string().uuid(),
-  description: z.string().min(1, { message: "Descrição é obrigatória." }),
-  amount: z.coerce.number().positive({ message: "O valor deve ser positivo." }),
-  type: z.enum(['income', 'expense']),
-  date: z.date(),
+  description: z.string().min(1, { message: "Descrição é obrigatória." }).optional(),
+  amount: z.coerce.number().positive({ message: "O valor deve ser positivo." }).optional(),
+  type: z.enum(['income', 'expense']).optional(),
+  date: z.coerce.date().optional(), // Usar coerce.date para maior flexibilidade
   categoryId: z.string().uuid().optional().nullable(),
 });
 
 export async function updateTransaction(input: z.infer<typeof updateTransactionSchema>) {
-    const supabase = createServerActionClient<Database>({ cookies });
-    const { data: { user } } = await supabase.auth.getUser();
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) {
-        return { success: false, message: "Utilizador não autenticado." };
-    }
+  if (!user) {
+    return { success: false, message: "Utilizador não autenticado." };
+  }
 
-    const validatedFields = updateTransactionSchema.safeParse(input);
+  const validatedFields = updateTransactionSchema.safeParse(input);
 
-    if (!validatedFields.success) {
-        return {
-            success: false,
-            message: "Dados de atualização inválidos.",
-            errors: validatedFields.error.flatten().fieldErrors,
-        };
-    }
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Dados de atualização inválidos.",
+      errors: validatedFields.error.flatten().fieldErrors,
+    };
+  }
 
-    const { id, description, amount, type, date, categoryId } = validatedFields.data;
+  const { id, ...dataToUpdate } = validatedFields.data;
 
-    const { error } = await supabase
-        .from('transactions')
-        .update({
-            description,
-            amount,
-            type,
-            date: date.toISOString(),
-            category_id: categoryId,
-        })
-        .eq('user_id', user.id)
-        .eq('id', id);
+  // Converte a data para o formato ISO string se ela existir
+  const updatePayload = {
+    ...dataToUpdate,
+    date: dataToUpdate.date ? dataToUpdate.date.toISOString() : undefined,
+    category_id: dataToUpdate.categoryId,
+  };
+  // Remove categoryId para evitar conflito com category_id
+  delete (updatePayload as any).categoryId;
 
-    if (error) {
-        return { success: false, message: `Erro ao atualizar transação: ${error.message}` };
-    }
 
-    revalidatePath('/despesas');
-    revalidatePath('/dashboard');
-    return { success: true, message: "Transação atualizada com sucesso!" };
+  const { error } = await supabase
+    .from('transactions')
+    .update(updatePayload)
+    .eq('user_id', user.id)
+    .eq('id', id);
+
+  if (error) {
+    console.error("Supabase error updating transaction:", error);
+    return { success: false, message: `Erro ao atualizar transação: ${error.message}` };
+  }
+
+  revalidatePath('/despesas');
+  revalidatePath('/dashboard');
+  return { success: true, message: "Transação atualizada com sucesso!" };
 }
-
 
 // =================================================================
 // 3. AÇÃO PARA APAGAR UMA TRANSAÇÃO
@@ -128,36 +130,34 @@ const deleteTransactionSchema = z.object({
   id: z.string().uuid("ID da transação inválido."),
 });
 
-export const deleteTransaction = async (input: { id: string }) => {
-  const supabase = createServerActionClient<Database>({ cookies });
+export async function deleteTransaction(input: { id: string }) {
+  const supabase = createClient();
   const validatedInput = deleteTransactionSchema.safeParse(input);
 
   if (!validatedInput.success) {
-    throw new Error("Input inválido.");
+    return { success: false, message: "ID da transação inválido." };
   }
 
   const { id } = validatedInput.data;
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!session) {
-    throw new Error("Ação não autorizada.");
+  if (!user) {
+    return { success: false, message: "Ação não autorizada." };
   }
 
   const { error } = await supabase
     .from("transactions")
     .delete()
-    .eq("user_id", session.user.id)
+    .eq("user_id", user.id)
     .eq("id", id);
 
   if (error) {
     console.error("Erro ao apagar transação:", error);
-    throw new Error("Não foi possível apagar a transação.");
+    return { success: false, message: "Não foi possível apagar a transação." };
   }
 
   revalidatePath("/despesas");
   revalidatePath("/dashboard");
 
-  return {
-    success: true,
-  };
+  return { success: true, message: "Transação excluída com sucesso!" };
 };

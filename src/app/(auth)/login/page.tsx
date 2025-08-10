@@ -5,6 +5,8 @@ import { ThemeSupa } from "@supabase/auth-ui-shared";
 import Link from "next/link";
 import { PiggyBank, ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 // Objeto de tradução para português
 const pt = {
@@ -67,6 +69,7 @@ const pt = {
 
 export default function LoginPage() {
   const supabase = createClient();
+  const router = useRouter();
 
   // Função para obter o URL base de forma segura
   const getURL = () => {
@@ -77,6 +80,36 @@ export default function LoginPage() {
     url = url.includes('http') ? url : `https://${url}`;
     return url;
   };
+
+  // Verificar se o utilizador já está autenticado
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        router.push('/dashboard');
+      }
+    };
+    
+    checkUser();
+
+    // Escutar mudanças de autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth event:', event, 'Session:', session);
+        
+        if (event === 'SIGNED_IN' && session) {
+          console.log('Utilizador autenticado, redirecionando...');
+          router.push('/dashboard');
+        }
+        
+        if (event === 'SIGNED_OUT') {
+          console.log('Utilizador deslogado');
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, [supabase, router]);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 px-4">
@@ -117,9 +150,30 @@ export default function LoginPage() {
             appearance={{
               theme: ThemeSupa,
               style: {
-                button: { borderRadius: "0.5rem", padding: "0.75rem" },
-                input: { borderRadius: "0.5rem", padding: "0.75rem" },
-                label: { color: "white" },
+                button: { 
+                  borderRadius: "0.5rem", 
+                  padding: "0.75rem",
+                  backgroundColor: "#10b981",
+                  border: "none",
+                  color: "white"
+                },
+                input: { 
+                  borderRadius: "0.5rem", 
+                  padding: "0.75rem",
+                  backgroundColor: "rgba(255, 255, 255, 0.1)",
+                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  color: "white"
+                },
+                label: { 
+                  color: "white",
+                  marginBottom: "0.5rem"
+                },
+                anchor: {
+                  color: "#10b981"
+                },
+                message: {
+                  color: "#ef4444"
+                }
               },
             }}
             theme="dark"
@@ -127,16 +181,16 @@ export default function LoginPage() {
             redirectTo={`${getURL()}/auth/callback`}
             view="sign_in"
             localization={{ variables: pt }}
-            showLinks={false}
+            showLinks={true}
           />
 
-          <div className="mt-6 flex flex-col items-center text-sm text-gray-300">
+          <div className="mt-6 flex flex-col items-center text-sm text-gray-300 space-y-2">
             <Link href="/sign-up" className="hover:underline text-emerald-400">
               Criar conta grátis
             </Link>
             <Link
               href="/forgot-password"
-              className="hover:underline text-gray-400 mt-2"
+              className="hover:underline text-gray-400"
             >
               Esqueceu-se da sua senha?
             </Link>

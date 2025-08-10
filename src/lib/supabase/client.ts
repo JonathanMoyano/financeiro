@@ -1,22 +1,11 @@
-import { createBrowserClient } from '@supabase/ssr'
+// src/lib/supabase/client.ts
+import { supabase } from '@/lib/supabase'
 
-// Variável para armazenar a instância única do cliente
-let client: ReturnType<typeof createBrowserClient> | undefined = undefined
+// Função para criar/exportar o cliente - compatibilidade com seu código atual
+export const createClient = () => supabase
 
-/**
- * Cria e retorna uma instância única (singleton) do cliente Supabase para o navegador.
- * Isso evita a criação de múltiplas instâncias, que pode causar erros de cookie
- * e comportamento inesperado, especialmente com Fast Refresh em desenvolvimento.
- */
-export function createClient() {
-  // Se a instância ainda não foi criada, cria-a
-  if (client === undefined) {
-    client = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  }
+// Export direto para facilitar importação
+export { supabase as default }
 
-  // Retorna a instância existente
-  return client
-}
+// Export nomeado para compatibilidade
+export { supabase }

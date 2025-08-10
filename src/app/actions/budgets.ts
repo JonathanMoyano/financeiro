@@ -1,8 +1,8 @@
 "use server"
 
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+// CORREÇÃO: Importa a função padronizada da biblioteca moderna.
+import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
 import { z } from "zod";
 import { Database } from "@/lib/database.types";
 
@@ -18,9 +18,10 @@ const updateBudgetSchema = z.object({
   budgetId: z.string().uuid(),
 });
 
-// --- FUNÇÃO DE CRIAR (já existente) ---
+// --- FUNÇÃO DE CRIAR (Corrigida) ---
 export async function createBudget(formData: FormData) {
-  const supabase = createServerComponentClient<Database>({ cookies });
+  // CORREÇÃO: Usa a nova função para criar o cliente Supabase.
+  const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, message: "Utilizador não autenticado." };
 
@@ -45,18 +46,19 @@ export async function createBudget(formData: FormData) {
   });
 
   if (error) {
-    if (error.code === '23505') {
+    if (error.code === '23505') { // Código de erro para violação de chave única (duplicado)
       return { success: false, message: "Já existe um orçamento para esta categoria neste mês." };
     }
     return { success: false, message: `Erro ao criar orçamento: ${error.message}` };
   }
-  revalidatePath('/orcamentos');
+  revalidatePath('/orcamentos'); // Adapte este caminho se a sua página for diferente
   return { success: true, message: "Orçamento criado com sucesso!" };
 }
 
-// --- NOVA FUNÇÃO DE ATUALIZAR ---
+// --- FUNÇÃO DE ATUALIZAR (Corrigida) ---
 export async function updateBudget(formData: FormData) {
-  const supabase = createServerComponentClient<Database>({ cookies });
+  // CORREÇÃO: Usa a nova função para criar o cliente Supabase.
+  const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, message: "Utilizador não autenticado." };
 
@@ -83,9 +85,10 @@ export async function updateBudget(formData: FormData) {
   return { success: true, message: "Orçamento atualizado com sucesso!" };
 }
 
-// --- NOVA FUNÇÃO DE EXCLUIR ---
+// --- FUNÇÃO DE EXCLUIR (Corrigida) ---
 export async function deleteBudget(budgetId: string) {
-  const supabase = createServerComponentClient<Database>({ cookies });
+  // CORREÇÃO: Usa a nova função para criar o cliente Supabase.
+  const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, message: "Utilizador não autenticado." };
 
