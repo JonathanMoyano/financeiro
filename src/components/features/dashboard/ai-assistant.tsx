@@ -22,10 +22,20 @@ export function AIAssistant() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question }),
       });
+
+      // Verifica se o pedido foi bem-sucedido
+      if (!response.ok) {
+        // Tenta obter uma mensagem de erro mais específica da API
+        const errorData = await response.text();
+        throw new Error(errorData || `Erro HTTP: ${response.status}`);
+      }
+
       const data = await response.json();
       setAnswer(data.answer);
-    } catch (error) {
-      setAnswer("Desculpe, ocorreu um erro ao contatar a IA.");
+
+    } catch (error: any) {
+      console.error("Erro ao contatar a IA:", error);
+      setAnswer(`Desculpe, ocorreu um erro: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -46,7 +56,7 @@ export function AIAssistant() {
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
         />
-        <Button onClick={handleAsk} disabled={isLoading}>
+        <Button onClick={handleAsk} disabled={isLoading || !question}>
           {isLoading ? "Analisando..." : "Perguntar à IA"}
         </Button>
         {answer && (

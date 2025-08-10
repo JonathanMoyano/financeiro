@@ -7,15 +7,15 @@ import {
   LayoutDashboard, 
   Wallet, 
   BarChart2, 
-  Settings, 
   LogOut, 
   Menu,
   User,
-  DollarSign,
+  PiggyBank,
   Shield,
   ChevronDown,
   Bell,
-  MoreHorizontal
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,6 +27,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Sheet,
   SheetContent,
   SheetTrigger,
@@ -36,6 +41,8 @@ import {
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
+import { getUpcomingBills } from '@/app/actions/notifications';
+import { differenceInDays, parseISO } from 'date-fns';
 
 // TYPES
 interface NavItem {
@@ -77,17 +84,11 @@ const NAV_ITEMS: NavItem[] = [
     icon: BarChart2,
     description: 'Análises e gráficos'
   },
-  { 
-    href: '/configuracoes', 
-    label: 'Configurações', 
-    icon: Settings,
-    description: 'Preferências do sistema'
-  },
 ] as const;
 
 const APP_CONFIG = {
   name: 'Meu Financeiro',
-  logo: DollarSign,
+  logo: PiggyBank,
   shortName: 'MF',
 } as const;
 
@@ -198,34 +199,103 @@ const LoadingSkeleton = () => (
   </div>
 );
 
-// Componente de Notificações simplificado
-const NotificationButton = () => {
-  const [hasNotifications, setHasNotifications] = useState(true);
+const NotificationBell = () => {
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
-  const handleNotificationClick = () => {
-    // Lógica para abrir/marcar notificações como lidas
-    setHasNotifications(false);
-    // Aqui você pode implementar a navegação ou modal de notificações
-    console.log('Abrindo notificações...');
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      setIsLoading(true);
+      try {
+        const upcomingBills = await getUpcomingBills();
+        setNotifications(upcomingBills);
+      } catch (error) {
+        console.error("Falha ao carregar notificações:", error);
+        setNotifications([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (isOpen) {
+        fetchNotifications();
+    }
+  }, [isOpen]);
+
+  const getDueDateText = (dateString: string) => {
+    const date = parseISO(dateString);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const days = differenceInDays(date, today);
+
+    if (days < 0) return 'Vencido';
+    if (days === 0) return 'Vence hoje';
+    if (days === 1) return 'Vence amanhã';
+    return `Vence em ${days} dias`;
   };
 
   return (
-    <Button 
-      variant="ghost" 
-      size="icon" 
-      className="h-10 w-10 rounded-xl hover:bg-accent/80 transition-all duration-200 hover:scale-[1.05] relative"
-      aria-label="Notificações"
-      onClick={handleNotificationClick}
-    >
-      <Bell className="h-5 w-5" />
-      {hasNotifications && (
-        <div className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full border-2 border-background animate-pulse" />
-      )}
-    </Button>
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 rounded-xl hover:bg-accent/80 transition-all duration-200 hover:scale-[1.05] relative"
+          aria-label="Notificações"
+        >
+          <Bell className="h-5 w-5" />
+          {notifications.length > 0 && !isLoading && (
+            <div className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full border-2 border-background animate-pulse" />
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 p-0">
+        <div className="p-4 border-b">
+          <h3 className="text-sm font-medium">Contas a Vencer</h3>
+          <p className="text-xs text-muted-foreground">
+            {isLoading ? 'Carregando...' : `Você tem ${notifications.length} contas a vencer nos próximos 30 dias.`}
+          </p>
+        </div>
+        <div className="p-2 max-h-80 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex justify-center items-center p-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : notifications.length > 0 ? (
+            notifications.map((notif) => (
+              <div key={notif.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-accent">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-yellow-100 dark:bg-yellow-900/30">
+                   <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{notif.description}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {getDueDateText(notif.date)} -{' '}
+                    <span className="font-semibold text-red-500">
+                      {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(notif.amount)}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center text-sm text-muted-foreground p-8">
+              Nenhuma conta a vencer.
+            </div>
+          )}
+        </div>
+        <div className="p-2 border-t bg-muted/50">
+            <Button variant="ghost" size="sm" className="w-full" asChild>
+                <Link href="/despesas">Ver todas as transações</Link>
+            </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 };
 
-// UserMenu simplificado com melhor compatibilidade
 const UserMenu = ({ user, isLoading, onLogout }: UserMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -242,18 +312,10 @@ const UserMenu = ({ user, isLoading, onLogout }: UserMenuProps) => {
   const fullName = user?.user_metadata?.full_name || displayName;
 
   const handleProfileClick = () => {
-    console.log('Navegando para perfil...');
-    // Usar window.location para garantir navegação
     window.location.href = '/configuracoes/perfil';
   };
 
-  const handleSettingsClick = () => {
-    console.log('Navegando para configurações...');
-    window.location.href = '/configuracoes';
-  };
-
   const handleAppearanceClick = () => {
-    console.log('Navegando para aparência...');
     window.location.href = '/configuracoes/aparencia';
   };
 
@@ -341,17 +403,6 @@ const UserMenu = ({ user, isLoading, onLogout }: UserMenuProps) => {
           
           <DropdownMenuItem 
             className="rounded-lg cursor-pointer p-2 focus:bg-accent focus:text-accent-foreground"
-            onClick={handleSettingsClick}
-          >
-            <Settings className="h-4 w-4 mr-3" />
-            <div>
-              <span className="font-medium">Configurações</span>
-              <p className="text-xs text-muted-foreground">Preferências do sistema</p>
-            </div>
-          </DropdownMenuItem>
-          
-          <DropdownMenuItem 
-            className="rounded-lg cursor-pointer p-2 focus:bg-accent focus:text-accent-foreground"
             onClick={handleAppearanceClick}
           >
             <Shield className="h-4 w-4 mr-3" />
@@ -393,11 +444,12 @@ const AppLogo = ({ collapsed = false }: { collapsed?: boolean }) => (
     )}
   >
     <div className="relative">
-      <APP_CONFIG.logo className="h-8 w-8 text-primary transition-transform duration-200 group-hover:rotate-12" />
-      <div className="absolute inset-0 bg-primary/20 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+      {/* 3. Código do ícone e do brilho atualizado */}
+      <APP_CONFIG.logo className="h-8 w-8 text-emerald-400 group-hover:text-emerald-300 transition-colors" />
+      <div className="absolute -inset-1 bg-emerald-400/20 rounded-full blur group-hover:bg-emerald-300/30 transition-all"></div>
     </div>
     {!collapsed && (
-      <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text">
+      <span className="font-bold text-xl tracking-tight">
         {APP_CONFIG.name}
       </span>
     )}
@@ -481,7 +533,6 @@ const MobileSidebar = () => {
   );
 };
 
-// HOOKS
 const useAuth = () => {
   const router = useRouter();
   const supabase = createClientComponentClient();
@@ -554,7 +605,6 @@ const useAuth = () => {
   return { user, isLoading, handleLogout };
 };
 
-// MAIN LAYOUT COMPONENT
 export default function PlatformLayout({
   children,
 }: {
@@ -570,24 +620,21 @@ export default function PlatformLayout({
 
   return (
     <div className="min-h-screen w-full bg-background">
-      {/* Layout responsivo melhorado */}
       <div className="flex h-screen overflow-hidden">
         <DesktopSidebar />
         
         <div className="flex flex-col flex-1 min-w-0">
-          {/* Header fixo */}
           <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:px-6">
             <MobileSidebar />
             
             <div className="flex-1" />
             
             <div className="flex items-center gap-2">
-              <NotificationButton />
+              <NotificationBell />
               <UserMenu {...userMenuProps} />
             </div>
           </header>
           
-          {/* Main Content com scroll independente */}
           <main className="flex-1 overflow-auto">
             <div className="min-h-full bg-gradient-to-br from-background via-muted/20 to-muted/40 relative">
               <div className="absolute inset-0 bg-grid-black/[0.02] dark:bg-grid-white/[0.02]" />

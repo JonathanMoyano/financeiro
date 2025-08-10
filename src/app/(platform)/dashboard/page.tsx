@@ -1,4 +1,4 @@
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClient } from "@/lib/supabase/server"; // Alterado para a nova biblioteca
 import { cookies } from "next/headers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -74,7 +74,7 @@ type TransactionWithCategory = {
 
 // Função para buscar dados do dashboard com mais detalhes
 async function getDashboardData() {
-  const supabase = createServerComponentClient<Database>({ cookies });
+  const supabase = createClient(); // Alterado para a nova biblioteca
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {

@@ -40,7 +40,7 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-// Componente do Formulário - A palavra 'export' aqui é crucial
+// Componente do Formulário
 export function NewTransactionForm({ categories, setOpen }: NewTransactionFormProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -68,7 +68,9 @@ export function NewTransactionForm({ categories, setOpen }: NewTransactionFormPr
     }
 
     try {
-      const result = await createTransaction(formData);
+      // CORREÇÃO: Passando 'null' como o primeiro argumento
+      const result = await createTransaction(null, formData);
+      
       if (result.success) {
         toast.success(result.message);
         setOpen(false);
