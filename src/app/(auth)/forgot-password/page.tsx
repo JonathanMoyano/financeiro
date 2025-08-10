@@ -1,34 +1,42 @@
 "use client";
 
-import { Auth } from "@supabase/auth-ui-react";
-import { ThemeSupa } from "@supabase/auth-ui-shared";
 import Link from "next/link";
 import { PiggyBank, ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { useState } from "react";
 
-// Objeto de tradução para português
-const pt = {
-  forgotten_password: {
-    email_label: "Endereço de e-mail",
-    email_input_placeholder: "O seu endereço de e-mail",
-    button_label: "Enviar instruções",
-    loading_button_label: "A enviar...",
-    link_text: "Esqueceu-se da sua senha?",
-    confirmation_text: "Verifique o seu e-mail para o link de redefinição de senha",
-  },
-};
-
-export default function ForgotPasswordPage() {
+export default function ForgotPasswordManual() {
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  
   const supabase = createClient();
 
-  // Função para obter o URL base de forma segura
-  const getURL = () => {
-    let url =
-      process.env.NEXT_PUBLIC_SITE_URL || // Definido por si
-      process.env.NEXT_PUBLIC_VERCEL_URL || // Definido pela Vercel
-      'https://financeiro-amber.vercel.app//auth/callback';
-    url = url.includes('http') ? url : `https://${url}`;
-    return url;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      // CORREÇÃO: Usar resetPasswordForEmail com configuração mais específica
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      });
+
+      if (error) {
+        console.error('Erro no resetPasswordForEmail:', error);
+        setError(error.message);
+      } else {
+        setMessage("Verifique o seu e-mail para o link de redefinição de senha");
+      }
+    } catch (err) {
+      console.error('Erro inesperado:', err);
+      setError("Erro inesperado. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -65,39 +73,42 @@ export default function ForgotPasswordPage() {
             </p>
           </div>
 
-          <Auth
-            supabaseClient={supabase}
-            appearance={{
-              theme: ThemeSupa,
-              variables: {
-                default: {
-                  colors: {
-                    brand: '#10b981',
-                    brandAccent: '#059669',
-                    defaultButtonBackground: '#10b981',
-                    defaultButtonBackgroundHover: '#059669',
-                    inputBackground: 'rgba(255, 255, 255, 0.05)',
-                    inputBorder: 'rgba(255, 255, 255, 0.2)',
-                    inputBorderHover: 'rgba(255, 255, 255, 0.4)',
-                    inputBorderFocus: '#10b981',
-                    inputText: 'white',
-                    inputLabelText: 'white',
-                    inputPlaceholder: '#a1a1aa',
-                  },
-                  radii: {
-                    buttonBorderRadius: '0.5rem',
-                    inputBorderRadius: '0.5rem',
-                  }
-                }
-              }
-            }}
-            theme="dark"
-            providers={[]}
-            redirectTo={`${getURL()}/auth/callback`}
-            view="forgotten_password"
-            localization={{ variables: pt }}
-            showLinks={false}
-          />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-white mb-2">
+                Endereço de e-mail
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="O seu endereço de e-mail"
+                required
+                className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+            >
+              {loading ? "A enviar..." : "Enviar instruções"}
+            </button>
+
+            {message && (
+              <div className="p-4 bg-emerald-500/20 border border-emerald-500/30 rounded-lg">
+                <p className="text-emerald-300 text-sm">{message}</p>
+              </div>
+            )}
+
+            {error && (
+              <div className="p-4 bg-red-500/20 border border-red-500/30 rounded-lg">
+                <p className="text-red-300 text-sm">{error}</p>
+              </div>
+            )}
+          </form>
         </div>
       </div>
     </div>
