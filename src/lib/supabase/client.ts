@@ -1,11 +1,12 @@
-// src/lib/supabase/client.ts
-import { supabase } from '@/lib/supabase'
+// Em: src/lib/supabase/client.ts
 
-// Função para criar/exportar o cliente - compatibilidade com seu código atual
-export const createClient = () => supabase
+import { createBrowserClient } from '@supabase/ssr'
 
-// Export direto para facilitar importação
-export { supabase as default }
-
-// Export nomeado para compatibilidade
-export { supabase }
+// Esta é a forma correta de criar uma função que retorna um cliente Supabase
+// para ser usado em Componentes de Cliente (que possuem a diretiva 'use client').
+export const createClient = () => {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}

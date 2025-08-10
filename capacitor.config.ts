@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   webDir: 'out', // Esta linha será ignorada, mas pode deixar
   // ADICIONE ESTA SEÇÃO:
   server: {
-    url: 'https://financeiro-jonathanmoyano.vercel.app/', // SUBSTITUA PELA SUA URL REAL DA VERCEL
+    url: 'https://financeiro-amber.vercel.app/', // SUBSTITUA PELA SUA URL REAL DA VERCEL
     cleartext: true
   }
 };

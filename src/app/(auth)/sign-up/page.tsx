@@ -39,7 +39,7 @@ export default function SignUpPage() {
     let url =
       process.env.NEXT_PUBLIC_SITE_URL || // Definido por si
       process.env.NEXT_PUBLIC_VERCEL_URL || // Definido pela Vercel
-      'http://localhost:3000';
+      'https://financeiro-amber.vercel.app/sign-up';
     url = url.includes('http') ? url : `https://${url}`;
     return url;
   };
