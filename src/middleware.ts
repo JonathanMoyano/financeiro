@@ -3,27 +3,28 @@ import { createClient } from '@/lib/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
   const { supabase, response } = createClient(request)
-  const { data: { session } } = await supabase.auth.getSession()
   const { pathname } = request.nextUrl
+  
+  // PRIMEIRO: Sempre permitir rotas de autenticação (callback, reset-password, etc.)
+  if (pathname.startsWith('/auth/')) {
+    return response
+  }
 
-  // Lógica para proteger as rotas da sua plataforma
+  // Obter sessão apenas após verificar se não é rota de auth
+  const { data: { session } } = await supabase.auth.getSession()
+
+  // Proteger rotas do dashboard
   if (!session && pathname.startsWith('/dashboard')) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Lógica para redirecionar usuários já logados
-  // CORREÇÃO: Adicionar exceção para a página de redefinição de senha
-  if (session && (pathname.startsWith('/login') || pathname.startsWith('/sign-up')) && !pathname.startsWith('/auth/reset-password')) {
+  // Redirecionar usuários já logados das páginas de login/signup
+  if (session && (pathname.startsWith('/login') || pathname.startsWith('/sign-up'))) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
-  }
-
-  // Permitir acesso às rotas de autenticação sem redirecionamento
-  if (pathname.startsWith('/auth/')) {
-    return response
   }
 
   return response
