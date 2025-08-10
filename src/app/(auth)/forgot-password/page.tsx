@@ -22,7 +22,7 @@ export default function ForgotPasswordManual() {
     try {
       // CORREÇÃO: Usar resetPasswordForEmail com configuração mais específica
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: 'https://financeiro-amber.vercel.app/auth/reset-password',
       });
 
       if (error) {
