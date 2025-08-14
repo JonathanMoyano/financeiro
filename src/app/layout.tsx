@@ -5,19 +5,19 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Analytics } from "@vercel/analytics/react"; // Corrigido para /react, que é mais universal
 
-const inter = Inter({ 
+const inter = Inter({
   subsets: ["latin"],
-  display: 'swap',
-  variable: '--font-inter',
+  display: "swap",
+  variable: "--font-inter",
   preload: true,
 });
 
-// CORRETO: Next.js gerencia o viewport a partir daqui.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 5, // Permite zoom para acessibilidade
+  maximumScale: 5,
   userScalable: true,
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
@@ -25,14 +25,19 @@ export const viewport: Viewport = {
   ],
 };
 
-// CORRETO: Next.js gerencia todos os metadados a partir daqui.
 export const metadata: Metadata = {
   title: {
     default: "Meu Financeiro",
-    template: "%s | Meu Financeiro"
+    template: "%s | Meu Financeiro",
   },
   description: "Controle suas finanças pessoais com facilidade e inteligência.",
-  keywords: ["finanças", "controle financeiro", "orçamento", "despesas", "receitas"],
+  keywords: [
+    "finanças",
+    "controle financeiro",
+    "orçamento",
+    "despesas",
+    "receitas",
+  ],
   authors: [{ name: "Meu Financeiro Team" }],
   robots: { index: true, follow: true },
   icons: {
@@ -47,7 +52,6 @@ export const metadata: Metadata = {
     title: "Meu Financeiro",
   },
   formatDetection: { telephone: false },
-  // ... outros metadados que você queira adicionar
 };
 
 export default function RootLayout({
@@ -56,11 +60,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // A tag <html> é o container principal
-    <html lang="pt-BR" suppressHydrationWarning className={`${inter.variable} antialiased`}>
-      {/* REMOVIDO: A tag <head> manual foi removida. 
-        Next.js vai injetar o <head> aqui automaticamente.
-      */}
+    <html
+      lang="pt-BR"
+      suppressHydrationWarning
+      className={`${inter.variable} antialiased`}
+    >
       <body className={`${inter.className} min-h-screen font-sans antialiased`}>
         <ThemeProvider
           attribute="class"
@@ -71,13 +75,14 @@ export default function RootLayout({
         >
           <TooltipProvider delayDuration={200}>
             <div className="relative flex min-h-screen flex-col bg-background">
-              <div className="flex-1">
-                {children}
-              </div>
+              <div className="flex-1">{children}</div>
             </div>
           </TooltipProvider>
         </ThemeProvider>
-        
+
+        {/* O Vercel Analytics foi adicionado aqui */}
+        <Analytics />
+
         {/* O script para o tema pode permanecer, pois manipula o DOM diretamente */}
         <script
           dangerouslySetInnerHTML={{
