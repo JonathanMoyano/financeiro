@@ -1,802 +1,646 @@
-// src/app/(platform)/despesas/page.tsx
-"use client";
+'use client'
 
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { supabase, getCachedData, setCachedData, invalidateCache } from '@/lib/supabase';
-import { useFormState, useFormStatus } from 'react-dom';
-import { PlusCircle, Loader2, ArrowUpCircle, ArrowDownCircle, MoreHorizontal, Edit, Trash2 } from 'lucide-react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  CardFooter,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose
-} from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { toast } from 'sonner';
-import { createTransaction, deleteTransaction } from '@/app/actions/transactions';
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { User } from '@supabase/supabase-js'
+import { 
+  Plus, 
+  Edit, 
+  Trash2, 
+  Calendar, 
+  DollarSign, 
+  Tag,
+  Search,
+  Filter,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react'
 
-// Tipos de dados
-// <<< CORREÇÃO DE TIPAGEM >>> O tipo foi ajustado para aceitar `null` nos campos que podem vir nulos do banco de dados.
-type Transaction = {
-  id: string;
-  created_at: string;
-  description: string | null;
-  amount: number;
-  type: 'income' | 'expense';
-  category_id: string | null;
-  user_id: string;
-  categories: { name: string } | null;
-};
-
-type Category = {
-  id: string;
-  name: string;
-};
-
-type ActionResult = {
-  success: boolean;
-  message?: string;
-  errors?: Record<string, string[]>;
-};
-
-// Componente do botão de submissão
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" disabled={pending}>
-      {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-      Salvar
-    </Button>
-  );
+interface Despesa {
+  id: string
+  descricao: string
+  valor: number
+  categoria: string
+  data: string
+  user_id: string
+  created_at: string
 }
 
-// Componente otimizado para as ações da transação
-function TransactionActions({
-  transaction,
-  onEdit,
-  onDelete
-}: {
-  transaction: Transaction;
-  onEdit: (transaction: Transaction) => void;
-  onDelete: (transaction: Transaction) => void;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
+const categorias = [
+  'Alimentação',
+  'Transporte',
+  'Moradia',
+  'Saúde',
+  'Educação',
+  'Lazer',
+  'Roupas',
+  'Outros'
+]
 
-  const handleEdit = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsOpen(false);
-    onEdit(transaction);
-  }, [transaction, onEdit]);
+export default function DespesasPage() {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [despesas, setDespesas] = useState<Despesa[]>([])
+  const [filteredDespesas, setFilteredDespesas] = useState<Despesa[]>([])
+  const [showModal, setShowModal] = useState(false)
+  const [editingDespesa, setEditingDespesa] = useState<Despesa | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCategoria, setSelectedCategoria] = useState('')
+  const [sortBy, setSortBy] = useState<'data' | 'valor' | 'categoria'>('data')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage] = useState(10)
 
-  const handleDelete = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsOpen(false);
-    onDelete(transaction);
-  }, [transaction, onDelete]);
+  // Form states
+  const [formData, setFormData] = useState({
+    descricao: '',
+    valor: '',
+    categoria: '',
+    data: new Date().toISOString().split('T')[0]
+  })
 
-  return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          className="h-8 w-8 p-0 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          onClick={(e: React.MouseEvent) => e.stopPropagation()}
-        >
-          <span className="sr-only">Abrir menu de ações</span>
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="w-40"
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
-      >
-        <DropdownMenuItem
-          onClick={handleEdit}
-          className="cursor-pointer focus:bg-accent"
-        >
-          <Edit className="mr-2 h-4 w-4" />
-          Editar
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={handleDelete}
-          className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/20"
-        >
-          <Trash2 className="mr-2 h-4 w-4" />
-          Apagar
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+  const router = useRouter()
+  const supabase = createClientComponentClient()
 
-// Componente para confirmar exclusão
-function DeleteConfirmDialog({
-  isOpen,
-  onClose,
-  onConfirm,
-  transaction,
-  isDeleting
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  transaction: Transaction | null;
-  isDeleting: boolean;
-}) {
-  return (
-    <AlertDialog open={isOpen} onOpenChange={onClose}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
-          <AlertDialogDescription>
-            Tem certeza que deseja excluir a transação "{transaction?.description}"?
-            Esta ação não pode ser desfeita.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={onClose} disabled={isDeleting}>
-            Cancelar
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            disabled={isDeleting}
-            className="bg-red-600 hover:bg-red-700"
-          >
-            {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Excluir
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-// Hook personalizado para gerenciar dados com cache
-function useTransactionsData(userId: string | undefined) {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchData = useCallback(async (currentUserId: string, forceRefresh = false) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const transactionsKey = `transactions-${currentUserId}`;
-      const categoriesKey = `categories-${currentUserId}`;
-
-      if (!forceRefresh) {
-        const cachedTransactions = getCachedData<Transaction[]>(transactionsKey);
-        const cachedCategories = getCachedData<Category[]>(categoriesKey);
-
-        if (cachedTransactions && cachedCategories) {
-          setTransactions(cachedTransactions);
-          setCategories(cachedCategories);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      const [transactionsResponse, categoriesResponse] = await Promise.all([
-        supabase
-          .from('transactions')
-          .select('*, categories(name)')
-          .eq('user_id', currentUserId)
-          .order('created_at', { ascending: false })
-          .limit(100),
-        
-        supabase
-          .from('categories')
-          .select('id, name')
-          .eq('user_id', currentUserId)
-      ]);
-
-      if (transactionsResponse.error) {
-        throw new Error('Erro ao buscar transações: ' + transactionsResponse.error.message);
-      }
-      if (categoriesResponse.error) {
-        throw new Error('Erro ao buscar categorias: ' + categoriesResponse.error.message);
-      }
-
-      const transactionsData = (transactionsResponse.data && Array.isArray(transactionsResponse.data)) 
-        ? transactionsResponse.data 
-        : [];
-      
-      const categoriesData = (categoriesResponse.data && Array.isArray(categoriesResponse.data)) 
-        ? categoriesResponse.data 
-        : [];
-
-      // <<< CORREÇÃO DE TIPAGEM >>> Adicionado 'as Transaction[]' para que o TypeScript confie que os dados correspondem ao nosso tipo.
-      setTransactions(transactionsData as Transaction[]);
-      setCategories(categoriesData as Category[]);
-
-      setCachedData(transactionsKey, transactionsData, 300000);
-      setCachedData(categoriesKey, categoriesData, 300000);
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
-      setError(errorMessage);
-      console.error('Erro ao buscar dados:', err);
-      toast.error(errorMessage);
-      
-      setTransactions([]);
-      setCategories([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const refreshData = useCallback((currentUserId: string) => {
-    invalidateCache([`transactions-${currentUserId}`, `categories-${currentUserId}`]);
-    return fetchData(currentUserId, true);
-  }, [fetchData]);
-
-  return {
-    transactions,
-    categories,
-    isLoading,
-    error,
-    fetchData,
-    refreshData,
-    setTransactions,
-    setCategories
-  };
-}
-
-// Hook personalizado para autenticação
-function useAuth() {
-  const [user, setUser] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  // Verificar autenticação
   useEffect(() => {
-    let mounted = true;
-
     const checkAuth = async () => {
       try {
-        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        const { data: { session }, error } = await supabase.auth.getSession()
         
-        if (authError) {
-          throw authError;
+        if (error) {
+          console.error('Erro ao verificar sessão:', error)
+          router.push('/login')
+          return
         }
 
-        if (mounted) {
-          setUser(currentUser);
-          setError(null);
+        if (!session?.user) {
+          router.push('/login')
+          return
         }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Erro de autenticação';
-        if (mounted) {
-          setError(errorMessage);
-          setUser(null);
-        }
-        console.error('Erro de autenticação:', err);
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
+
+        setUser(session.user)
+        setLoading(false)
+      } catch (error) {
+        console.error('Erro inesperado:', error)
+        router.push('/login')
       }
-    };
+    }
 
-    checkAuth();
+    checkAuth()
 
+    // Listener para mudanças na autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (mounted) {
-          setUser(session?.user || null);
-          setError(null);
-          setIsLoading(false);
+        if (event === 'SIGNED_OUT' || !session) {
+          router.push('/login')
+        } else if (session?.user) {
+          setUser(session.user)
+          setLoading(false)
         }
       }
-    );
+    )
 
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+    return () => subscription.unsubscribe()
+  }, [supabase, router])
 
-  return { user, isLoading, error };
-}
-
-export default function TransactionsPage() {
-  const { user, isLoading: authLoading, error: authError } = useAuth();
-  const { 
-    transactions, 
-    categories, 
-    isLoading: dataLoading, 
-    error: dataError,
-    fetchData,
-    refreshData 
-  } = useTransactionsData(user?.id);
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [deleteDialog, setDeleteDialog] = useState<{
-    isOpen: boolean;
-    transaction: Transaction | null;
-    isDeleting: boolean;
-  }>({
-    isOpen: false,
-    transaction: null,
-    isDeleting: false
-  });
-  
-  const formRef = useRef<HTMLFormElement>(null);
-  const initialState = { message: "", errors: {}, success: false };
-  const [state, formAction] = useFormState(createTransaction, initialState);
-
+  // Carregar despesas
   useEffect(() => {
-    if (user?.id) {
-      fetchData(user.id);
+    if (user) {
+      loadDespesas()
     }
-  }, [user?.id, fetchData]);
+  }, [user])
 
+  // Filtrar e ordenar despesas
   useEffect(() => {
-    if (state.success) {
-      setIsModalOpen(false);
-      formRef.current?.reset();
-      toast.success(state.message || 'Transação criada com sucesso!');
-      if (user?.id) {
-        refreshData(user.id);
+    let filtered = [...despesas]
+
+    // Filtro por busca
+    if (searchTerm) {
+      filtered = filtered.filter(despesa =>
+        despesa.descricao.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        despesa.categoria.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+
+    // Filtro por categoria
+    if (selectedCategoria) {
+      filtered = filtered.filter(despesa => despesa.categoria === selectedCategoria)
+    }
+
+    // Ordenação
+    filtered.sort((a, b) => {
+      let comparison = 0
+      
+      switch (sortBy) {
+        case 'data':
+          comparison = new Date(a.data).getTime() - new Date(b.data).getTime()
+          break
+        case 'valor':
+          comparison = a.valor - b.valor
+          break
+        case 'categoria':
+          comparison = a.categoria.localeCompare(b.categoria)
+          break
       }
-    } else if (state.message && !state.success && Object.keys(state.errors || {}).length === 0) {
-      toast.error(state.message);
-    }
-  }, [state, user?.id, refreshData]);
 
-  const handleEdit = useCallback((transaction: Transaction) => {
-    console.log('Editar transação:', transaction);
-    toast.info('Função de edição em desenvolvimento');
-  }, []);
+      return sortOrder === 'asc' ? comparison : -comparison
+    })
 
-  const handleDelete = useCallback((transaction: Transaction) => {
-    setDeleteDialog({
-      isOpen: true,
-      transaction,
-      isDeleting: false
-    });
-  }, []);
+    setFilteredDespesas(filtered)
+    setCurrentPage(1)
+  }, [despesas, searchTerm, selectedCategoria, sortBy, sortOrder])
 
-  const confirmDelete = useCallback(async () => {
-    if (!deleteDialog.transaction || !user?.id) return;
-
-    setDeleteDialog(prev => ({ ...prev, isDeleting: true }));
+  const loadDespesas = async () => {
+    if (!user) return
 
     try {
-      const result = await deleteTransaction({ id: deleteDialog.transaction.id }) as ActionResult;
-      
-      if (result.success) {
-        toast.success(result.message || 'Transação excluída com sucesso!');
-        await refreshData(user.id);
-        setDeleteDialog({
-          isOpen: false,
-          transaction: null,
-          isDeleting: false
-        });
-      } else {
-        toast.error(result.message || 'Erro ao excluir transação');
-        setDeleteDialog(prev => ({ ...prev, isDeleting: false }));
-      }
+      const { data, error } = await supabase
+        .from('despesas')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      setDespesas(data || [])
     } catch (error) {
-      console.error('Erro ao excluir:', error);
-      toast.error('Erro ao excluir transação');
-      setDeleteDialog(prev => ({ ...prev, isDeleting: false }));
+      console.error('Erro ao carregar despesas:', error)
     }
-  }, [deleteDialog.transaction, user?.id, refreshData]);
-
-  const financialSummary = useMemo(() => {
-    const validTransactions = Array.isArray(transactions) ? transactions : [];
-    
-    const incomeTransactions = validTransactions.filter(t => t.type === 'income');
-    const expenseTransactions = validTransactions.filter(t => t.type === 'expense');
-    
-    const totalIncome = incomeTransactions.reduce((acc, t) => acc + (typeof t.amount === 'number' ? t.amount : 0), 0);
-    const totalExpenses = expenseTransactions.reduce((acc, t) => acc + (typeof t.amount === 'number' ? t.amount : 0), 0);
-    const balance = totalIncome - totalExpenses;
-
-    return { incomeTransactions, expenseTransactions, totalIncome, totalExpenses, balance };
-  }, [transactions]);
-
-  if (authLoading || (user && dataLoading)) {
-    return (
-      <div className="flex-1 flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">
-            {authLoading ? 'Verificando autenticação...' : 'Carregando transações...'}
-          </p>
-        </div>
-      </div>
-    );
   }
 
-  if (authError || dataError) {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+
+    try {
+      const despesaData = {
+        descricao: formData.descricao,
+        valor: parseFloat(formData.valor),
+        categoria: formData.categoria,
+        data: formData.data,
+        user_id: user.id
+      }
+
+      if (editingDespesa) {
+        // Atualizar despesa existente
+        const { error } = await supabase
+          .from('despesas')
+          .update(despesaData)
+          .eq('id', editingDespesa.id)
+          .eq('user_id', user.id)
+
+        if (error) throw error
+      } else {
+        // Criar nova despesa
+        const { error } = await supabase
+          .from('despesas')
+          .insert([despesaData])
+
+        if (error) throw error
+      }
+
+      await loadDespesas()
+      closeModal()
+    } catch (error) {
+      console.error('Erro ao salvar despesa:', error)
+      alert('Erro ao salvar despesa. Tente novamente.')
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!user || !confirm('Tem certeza que deseja excluir esta despesa?')) return
+
+    try {
+      const { error } = await supabase
+        .from('despesas')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id)
+
+      if (error) throw error
+
+      await loadDespesas()
+    } catch (error) {
+      console.error('Erro ao excluir despesa:', error)
+      alert('Erro ao excluir despesa. Tente novamente.')
+    }
+  }
+
+  const openModal = (despesa?: Despesa) => {
+    if (despesa) {
+      setEditingDespesa(despesa)
+      setFormData({
+        descricao: despesa.descricao,
+        valor: despesa.valor.toString(),
+        categoria: despesa.categoria,
+        data: despesa.data
+      })
+    } else {
+      setEditingDespesa(null)
+      setFormData({
+        descricao: '',
+        valor: '',
+        categoria: '',
+        data: new Date().toISOString().split('T')[0]
+      })
+    }
+    setShowModal(true)
+  }
+
+  const closeModal = () => {
+    setShowModal(false)
+    setEditingDespesa(null)
+  }
+
+  const toggleSort = (field: 'data' | 'valor' | 'categoria') => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(field)
+      setSortOrder('desc')
+    }
+  }
+
+  // Paginação
+  const indexOfLastItem = currentPage * itemsPerPage
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage
+  const currentItems = filteredDespesas.slice(indexOfFirstItem, indexOfLastItem)
+  const totalPages = Math.ceil(filteredDespesas.length / itemsPerPage)
+
+  const total = despesas.reduce((sum, despesa) => sum + despesa.valor, 0)
+  const totalFiltered = filteredDespesas.reduce((sum, despesa) => sum + despesa.valor, 0)
+
+  if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="text-red-500 text-lg font-medium">
-            {authError ? 'Erro de autenticação' : 'Erro ao carregar dados'}
-          </div>
-          <p className="text-muted-foreground text-sm">
-            {authError || dataError}
-          </p>
-          <Button onClick={() => window.location.reload()}>
-            Tentar Novamente
-          </Button>
-        </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
-    );
+    )
   }
 
   if (!user) {
-    return (
-      <div className="flex-1 flex items-center justify-center min-h-[400px]">
-        <div className="text-center space-y-4">
-          <div className="text-red-500 text-lg font-medium">Usuário não autenticado</div>
-          <p className="text-muted-foreground text-sm">
-            Por favor, faça login para acessar suas transações.
-          </p>
-          <Button onClick={() => window.location.href = '/login'}>
-            Fazer Login
-          </Button>
-        </div>
-      </div>
-    );
+    return null // Componente não renderiza se não há usuário
   }
 
   return (
-    <div className="flex-1 space-y-6 p-4 md:p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Minhas Transações</h2>
-          <p className="text-muted-foreground mt-2">
-            Gerencie suas receitas e despesas
-          </p>
-        </div>
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <PlusCircle className="h-4 w-4" />
-              Adicionar Transação
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Adicionar Nova Transação</DialogTitle>
-            </DialogHeader>
-            <form ref={formRef} action={formAction}>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="description" className="text-right">
-                    Descrição
-                  </Label>
-                  <Input 
-                    id="description" 
-                    name="description" 
-                    className="col-span-3" 
-                    placeholder="Ex: Salário, Aluguel..."
-                    required 
-                  />
-                  {state.errors?.description && (
-                    <div className="col-span-4 text-sm text-red-600">
-                      {state.errors.description[0]}
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="amount" className="text-right">
-                    Valor
-                  </Label>
-                  <Input 
-                    id="amount" 
-                    name="amount" 
-                    type="number" 
-                    step="0.01" 
-                    className="col-span-3" 
-                    placeholder="0,00"
-                    required 
-                  />
-                  {state.errors?.amount && (
-                    <div className="col-span-4 text-sm text-red-600">
-                      {state.errors.amount[0]}
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="date" className="text-right">
-                    Data
-                  </Label>
-                  <Input 
-                    id="date" 
-                    name="date" 
-                    type="date" 
-                    className="col-span-3" 
-                    defaultValue={new Date().toISOString().split('T')[0]} 
-                    required 
-                  />
-                  {state.errors?.date && (
-                    <div className="col-span-4 text-sm text-red-600">
-                      {state.errors.date[0]}
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="type" className="text-right">
-                    Tipo
-                  </Label>
-                  <Select name="type" required>
-                    <SelectTrigger className="col-span-3">
-                      <SelectValue placeholder="Selecione o tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="income">Receita</SelectItem>
-                      <SelectItem value="expense">Despesa</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {state.errors?.type && (
-                    <div className="col-span-4 text-sm text-red-600">
-                      {state.errors.type[0]}
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="categoryId" className="text-right">
-                    Categoria
-                  </Label>
-                  <Select name="categoryId" required>
-                    <SelectTrigger className="col-span-3">
-                      <SelectValue placeholder="Selecione a categoria" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.isArray(categories) && categories.map(cat => (
-                        <SelectItem key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {state.errors?.categoryId && (
-                    <div className="col-span-4 text-sm text-red-600">
-                      {state.errors.categoryId[0]}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {state.message && !state.success && Object.keys(state.errors || {}).length > 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
-                  <p className="text-sm text-red-600">{state.message}</p>
-                </div>
-              )}
-              <DialogFooter className="mt-4">
-                <DialogClose asChild>
-                  <Button type="button" variant="outline">
-                    Cancelar
-                  </Button>
-                </DialogClose>
-                <SubmitButton />
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Minhas Despesas</h1>
+              <p className="mt-1 text-sm text-gray-600">
+                Gerencie e acompanhe seus gastos
+              </p>
+            </div>
+            <button
+              onClick={() => openModal()}
+              className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Nova Despesa
+            </button>
+          </div>
 
-      {/* Card de Resumo */}
-      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-blue-200 dark:border-blue-800">
-        <CardHeader>
-          <CardTitle className="text-blue-900 dark:text-blue-100">Resumo Financeiro</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center p-4 rounded-lg bg-green-100 dark:bg-green-900/20">
-              <p className="text-sm text-green-600 dark:text-green-400 font-medium">Receitas</p>
-              <p className="text-2xl font-bold text-green-700 dark:text-green-300">
-                R$ {financialSummary.totalIncome.toFixed(2)}
+          {/* Resumo */}
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center">
+                <DollarSign className="h-5 w-5 text-gray-400" />
+                <span className="ml-2 text-sm font-medium text-gray-600">Total Geral</span>
+              </div>
+              <p className="mt-1 text-xl font-semibold text-gray-900">
+                R$ {total.toFixed(2).replace('.', ',')}
               </p>
             </div>
-            <div className="text-center p-4 rounded-lg bg-red-100 dark:bg-red-900/20">
-              <p className="text-sm text-red-600 dark:text-red-400 font-medium">Despesas</p>
-              <p className="text-2xl font-bold text-red-700 dark:text-red-300">
-                R$ {financialSummary.totalExpenses.toFixed(2)}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center">
+                <Filter className="h-5 w-5 text-gray-400" />
+                <span className="ml-2 text-sm font-medium text-gray-600">Total Filtrado</span>
+              </div>
+              <p className="mt-1 text-xl font-semibold text-gray-900">
+                R$ {totalFiltered.toFixed(2).replace('.', ',')}
               </p>
             </div>
-            <div className="text-center p-4 rounded-lg bg-blue-100 dark:bg-blue-900/20">
-              <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Saldo</p>
-              <p className={`text-2xl font-bold ${financialSummary.balance >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
-                R$ {financialSummary.balance.toFixed(2)}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center">
+                <Tag className="h-5 w-5 text-gray-400" />
+                <span className="ml-2 text-sm font-medium text-gray-600">Total de Itens</span>
+              </div>
+              <p className="mt-1 text-xl font-semibold text-gray-900">
+                {filteredDespesas.length}
               </p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Grid das transações */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Coluna de Receitas */}
-        <Card className="border-green-500/20 bg-green-50/50 dark:bg-green-950/10">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-green-600 dark:text-green-500">
-              <ArrowUpCircle className="h-5 w-5" />
-              Receitas
-            </CardTitle>
-            <CardDescription>Todas as suas entradas de dinheiro</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border bg-background">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead>Categoria</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {financialSummary.incomeTransactions.length > 0 ? financialSummary.incomeTransactions.map((transaction) => (
-                    <TableRow key={transaction.id} className="group hover:bg-muted/50">
-                      <TableCell className="font-medium">
-                        {transaction.description}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {transaction.categories?.name || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-right font-medium text-green-600">
-                        + R$ {transaction.amount.toFixed(2)}
-                      </TableCell>
-                      <TableCell>
-                        <TransactionActions
-                          transaction={transaction}
-                          onEdit={handleEdit}
-                          onDelete={handleDelete}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  )) : (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
-                        <div className="flex flex-col items-center gap-2">
-                          <ArrowUpCircle className="h-8 w-8 opacity-20" />
-                          <span>Nenhuma receita registrada</span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+        {/* Filtros */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Busca */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Buscar
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar por descrição ou categoria..."
+                  className="pl-10 w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
             </div>
-          </CardContent>
-          <CardFooter>
-            <div className="flex w-full justify-between items-center text-lg font-bold">
-              <span>Total:</span>
-              <span className="text-green-600 dark:text-green-500">
-                R$ {financialSummary.totalIncome.toFixed(2)}
-              </span>
-            </div>
-          </CardFooter>
-        </Card>
 
-        {/* Coluna de Despesas */}
-        <Card className="border-red-500/20 bg-red-50/50 dark:bg-red-950/10">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-red-600 dark:text-red-500">
-              <ArrowDownCircle className="h-5 w-5" />
-              Despesas
-            </CardTitle>
-            <CardDescription>Todos os seus gastos</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border bg-background">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead>Categoria</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {financialSummary.expenseTransactions.length > 0 ? financialSummary.expenseTransactions.map((transaction) => (
-                    <TableRow key={transaction.id} className="group hover:bg-muted/50">
-                      <TableCell className="font-medium">
-                        {transaction.description}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {transaction.categories?.name || 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-right font-medium text-red-600">
-                        - R$ {transaction.amount.toFixed(2)}
-                      </TableCell>
-                      <TableCell>
-                        <TransactionActions
-                          transaction={transaction}
-                          onEdit={handleEdit}
-                          onDelete={handleDelete}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  )) : (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
-                        <div className="flex flex-col items-center gap-2">
-                          <ArrowDownCircle className="h-8 w-8 opacity-20" />
-                          <span>Nenhuma despesa registrada</span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+            {/* Filtro por categoria */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Categoria
+              </label>
+              <select
+                className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                value={selectedCategoria}
+                onChange={(e) => setSelectedCategoria(e.target.value)}
+              >
+                <option value="">Todas as categorias</option>
+                {categorias.map(categoria => (
+                  <option key={categoria} value={categoria}>{categoria}</option>
+                ))}
+              </select>
             </div>
-          </CardContent>
-          <CardFooter>
-            <div className="flex w-full justify-between items-center text-lg font-bold">
-              <span>Total:</span>
-              <span className="text-red-600 dark:text-red-500">
-                R$ {financialSummary.totalExpenses.toFixed(2)}
-              </span>
+
+            {/* Botão limpar filtros */}
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  setSearchTerm('')
+                  setSelectedCategoria('')
+                }}
+                className="w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                Limpar Filtros
+              </button>
             </div>
-          </CardFooter>
-        </Card>
+          </div>
+        </div>
+
+        {/* Tabela */}
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => toggleSort('data')}
+                  >
+                    <div className="flex items-center">
+                      Data
+                      <ArrowUpDown className="ml-1 h-3 w-3" />
+                    </div>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Descrição
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => toggleSort('categoria')}
+                  >
+                    <div className="flex items-center">
+                      Categoria
+                      <ArrowUpDown className="ml-1 h-3 w-3" />
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => toggleSort('valor')}
+                  >
+                    <div className="flex items-center">
+                      Valor
+                      <ArrowUpDown className="ml-1 h-3 w-3" />
+                    </div>
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ações
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {currentItems.length > 0 ? (
+                  currentItems.map((despesa) => (
+                    <tr key={despesa.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {new Date(despesa.data).toLocaleDateString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {despesa.descricao}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {despesa.categoria}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        R$ {despesa.valor.toFixed(2).replace('.', ',')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => openModal(despesa)}
+                          className="text-blue-600 hover:text-blue-900 mr-4"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(despesa.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500">
+                      {despesas.length === 0 
+                        ? 'Nenhuma despesa cadastrada ainda.'
+                        : 'Nenhuma despesa encontrada com os filtros aplicados.'
+                      }
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Paginação */}
+          {totalPages > 1 && (
+            <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+              <div className="flex-1 flex justify-between sm:hidden">
+                <button
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Anterior
+                </button>
+                <button
+                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                  className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Próximo
+                </button>
+              </div>
+              <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-gray-700">
+                    Mostrando{' '}
+                    <span className="font-medium">{indexOfFirstItem + 1}</span>
+                    {' '}-{' '}
+                    <span className="font-medium">
+                      {Math.min(indexOfLastItem, filteredDespesas.length)}
+                    </span>
+                    {' '}de{' '}
+                    <span className="font-medium">{filteredDespesas.length}</span>
+                    {' '}resultados
+                  </p>
+                </div>
+                <div>
+                  <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                    <button
+                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                      disabled={currentPage === 1}
+                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                          page === currentPage
+                            ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
+                            : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    
+                    <button
+                      onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                      disabled={currentPage === totalPages}
+                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
+                  </nav>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Dialog de confirmação de exclusão */}
-      <DeleteConfirmDialog
-        isOpen={deleteDialog.isOpen}
-        onClose={() => setDeleteDialog({ isOpen: false, transaction: null, isDeleting: false })}
-        onConfirm={confirmDelete}
-        transaction={deleteDialog.transaction}
-        isDeleting={deleteDialog.isDeleting}
-      />
+      {/* Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                {editingDespesa ? 'Editar Despesa' : 'Nova Despesa'}
+              </h3>
+              
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Descrição
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    value={formData.descricao}
+                    onChange={(e) => setFormData({...formData, descricao: e.target.value})}
+                    placeholder="Ex: Almoço no restaurante"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Valor
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    value={formData.valor}
+                    onChange={(e) => setFormData({...formData, valor: e.target.value})}
+                    placeholder="0,00"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Categoria
+                  </label>
+                  <select
+                    required
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    value={formData.categoria}
+                    onChange={(e) => setFormData({...formData, categoria: e.target.value})}
+                  >
+                    <option value="">Selecione uma categoria</option>
+                    {categorias.map(categoria => (
+                      <option key={categoria} value={categoria}>{categoria}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Data
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    value={formData.data}
+                    onChange={(e) => setFormData({...formData, data: e.target.value})}
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    {editingDespesa ? 'Atualizar' : 'Salvar'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
+  )
 }

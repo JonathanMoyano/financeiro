@@ -84,21 +84,24 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Dashboard', 
     icon: LayoutDashboard,
     description: 'Visão geral das suas finanças',
-    shortcut: '⌘D'
   },
   { 
     href: '/despesas', 
     label: 'Transações', 
     icon: Wallet,
     description: 'Gerenciar receitas e despesas',
-    shortcut: '⌘T'
+  },
+    { 
+    href: '/poupanca', 
+    label: 'Poupança', 
+    icon: PiggyBank,
+    description: 'Análises e insights financeiros',
   },
   { 
     href: '/relatorios', 
     label: 'Relatórios', 
     icon: BarChart2,
     description: 'Análises e insights financeiros',
-    shortcut: '⌘R'
   },
 ] as const;
 
@@ -754,55 +757,6 @@ const MobileSidebar = () => {
   );
 };
 
-// Breadcrumb Component
-const Breadcrumb = () => {
-  const pathname = usePathname();
-  
-  const getBreadcrumbs = (): BreadcrumbItem[] => {
-    const segments = pathname.split('/').filter(Boolean);
-    const breadcrumbs: BreadcrumbItem[] = [{ label: 'Início', href: '/dashboard', icon: Home }];
-    
-    let currentPath = '';
-    segments.forEach((segment) => {
-      currentPath += `/${segment}`;
-      
-      const item = NAV_ITEMS.find(nav => nav.href === currentPath);
-      if (item) {
-        breadcrumbs.push({
-          label: item.label,
-          href: currentPath,
-          icon: item.icon
-        });
-      }
-    });
-    
-    return breadcrumbs;
-  };
-
-  const breadcrumbs = getBreadcrumbs();
-  
-  if (breadcrumbs.length <= 1) return null;
-
-  return (
-    <div className="flex items-center space-x-1 text-sm text-muted-foreground mb-6">
-      {breadcrumbs.map((crumb, index) => (
-        <div key={crumb.href} className="flex items-center">
-          {index > 0 && <ChevronRight className="h-4 w-4 mx-1" />}
-          <Link
-            href={crumb.href}
-            className={cn(
-              "flex items-center gap-1.5 hover:text-foreground transition-colors rounded px-2 py-1 hover:bg-accent/50",
-              index === breadcrumbs.length - 1 && "text-foreground font-medium"
-            )}
-          >
-            <crumb.icon className="h-4 w-4" />
-            {crumb.label}
-          </Link>
-        </div>
-      ))}
-    </div>
-  );
-};
 
 export default function PlatformLayout({
   children,
@@ -838,7 +792,6 @@ export default function PlatformLayout({
             <div className="min-h-full relative">
               <div className="relative">
                 <div className="mx-auto max-w-7xl px-4 py-6 lg:px-6 lg:py-8">
-                  <Breadcrumb />
                   <div className="space-y-6">
                     {children}
                   </div>
