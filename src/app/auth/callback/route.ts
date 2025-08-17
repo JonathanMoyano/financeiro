@@ -1,30 +1,19 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { createClient } from '@/lib/supabase/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
-  const requestUrl = new URL(request.url);
-  const code = requestUrl.searchParams.get('code');
-  const type = requestUrl.searchParams.get('type');
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/dashboard'
 
   if (code) {
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
-    
-    try {
-      await supabase.auth.exchangeCodeForSession(code);
-    } catch (error) {
-      console.error('Erro ao trocar código por sessão:', error);
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error) {
+      return NextResponse.redirect(`${origin}${next}`)
     }
   }
 
-  // Verificar o tipo de callback
-  if (type === 'recovery') {
-    // Redirecionar para a página de redefinição de senha
-    return NextResponse.redirect(new URL('/auth/update-password', requestUrl.origin));
-  }
-
-  // Redirecionar para o dashboard após login normal
-  return NextResponse.redirect(new URL('/dashboard', requestUrl.origin));
+  // return the user to an error page with instructions
+  return NextResponse.redirect(`${origin}/auth/auth-code-error`)
 }

@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
-import { Database } from "@/lib/database.types";
 
 // =================================================================
 // 1. AÇÃO PARA CRIAR UMA NOVA TRANSAÇÃO
@@ -17,7 +16,7 @@ const createTransactionSchema = z.object({
 });
 
 export async function createTransaction(prevState: any, formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -73,12 +72,12 @@ const updateTransactionSchema = z.object({
   description: z.string().min(1, { message: "Descrição é obrigatória." }).optional(),
   amount: z.coerce.number().positive({ message: "O valor deve ser positivo." }).optional(),
   type: z.enum(['income', 'expense']).optional(),
-  date: z.coerce.date().optional(), // Usar coerce.date para maior flexibilidade
+  date: z.coerce.date().optional(),
   categoryId: z.string().uuid().optional().nullable(),
 });
 
 export async function updateTransaction(input: z.infer<typeof updateTransactionSchema>) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
@@ -106,7 +105,6 @@ export async function updateTransaction(input: z.infer<typeof updateTransactionS
   // Remove categoryId para evitar conflito com category_id
   delete (updatePayload as any).categoryId;
 
-
   const { error } = await supabase
     .from('transactions')
     .update(updatePayload)
@@ -131,7 +129,7 @@ const deleteTransactionSchema = z.object({
 });
 
 export async function deleteTransaction(input: { id: string }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const validatedInput = deleteTransactionSchema.safeParse(input);
 
   if (!validatedInput.success) {
@@ -160,4 +158,4 @@ export async function deleteTransaction(input: { id: string }) {
   revalidatePath("/dashboard");
 
   return { success: true, message: "Transação excluída com sucesso!" };
-};
+}
