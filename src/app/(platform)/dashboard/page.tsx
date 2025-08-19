@@ -200,91 +200,165 @@ export default function DashboardPage() {
     }
   }
 
-  const loadFinanceData = async () => {
-    if (!user) return
+const loadFinanceData = async () => {
+  if (!user) return
 
-    setLoadingStates(prev => ({ ...prev, finance: true }))
+  setLoadingStates(prev => ({ ...prev, finance: true }))
+  try {
+    console.log('💰 Carregando dados financeiros...')
+    
+    const { start, end } = getDateRange()
+    console.log('📅 Período:', start, 'até', end)
+
+    // Despesas do período
+    let despesas = 0
     try {
-      console.log('💰 Carregando dados financeiros...')
-      
-      const { start, end } = getDateRange()
-      console.log('📅 Período:', start, 'até', end)
+      const { data: despesasData, error: despesasError } = await supabase
+        .from('despesas')
+        .select('valor')
+        .eq('user_id', user.id)
+        .gte('data', start)
+        .lte('data', end)
 
-      // Despesas do período
-      let despesas = 0
-      try {
-        const { data: despesasData, error: despesasError } = await supabase
-          .from('despesas')
-          .select('valor')
-          .eq('user_id', user.id)
-          .gte('data', start)
-          .lte('data', end)
-
-        if (despesasError) {
-          console.error('Erro ao buscar despesas:', despesasError)
-        } else {
-          despesas = despesasData?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
-        }
-      } catch (error) {
-        console.error('Erro ao processar despesas:', error)
-        despesas = 0
+      if (despesasError) {
+        console.error('Erro ao buscar despesas:', despesasError)
+      } else {
+        despesas = despesasData?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
       }
-
-      // Poupança total
-      let poupanca = 0
-      let totalMetas = 0
-      let metasAtingidas = 0
-      try {
-        const { data: poupancaData, error: poupancaError } = await supabase
-          .from('poupanca')
-          .select('valor_atual, valor_objetivo')
-          .eq('user_id', user.id)
-
-        if (poupancaError) {
-          console.error('Erro ao buscar poupanças:', poupancaError)
-        } else if (poupancaData) {
-          poupanca = poupancaData.reduce((sum, item) => sum + (Number(item.valor_atual) || 0), 0)
-          totalMetas = poupancaData.length
-          metasAtingidas = poupancaData.filter(item => 
-            (Number(item.valor_atual) || 0) >= (Number(item.valor_objetivo) || 0)
-          ).length
-        }
-      } catch (error) {
-        console.error('Erro ao processar poupança:', error)
-        poupanca = 0
-      }
-
-      // Receitas (expandir quando tiver tabela específica)
-      const receitas = selectedPeriod === 'current_month' ? 2500 : 
-                      selectedPeriod === 'last_3_months' ? 7500 : 
-                      selectedPeriod === 'current_year' ? 30000 : 2500
-
-      // Atualizar estado
-      setFinanceData({
-        receitas: Number(receitas) || 0,
-        despesas: Number(despesas) || 0,
-        poupanca: Number(poupanca) || 0,
-        metaMensal: 3000,
-        totalMetas,
-        metasAtingidas
-      })
-
-      console.log('✅ Dados financeiros carregados:', { receitas, despesas, poupanca, totalMetas, metasAtingidas })
-
     } catch (error) {
-      console.error('❌ Erro ao carregar dados financeiros:', error)
-      setFinanceData({
-        receitas: 0,
-        despesas: 0,
-        poupanca: 0,
-        metaMensal: 0,
-        totalMetas: 0,
-        metasAtingidas: 0
-      })
-    } finally {
-      setLoadingStates(prev => ({ ...prev, finance: false }))
+      console.error('Erro ao processar despesas:', error)
+      despesas = 0
     }
+
+    // Receitas do período
+    let receitas = 0
+    try {
+      const { data: receitasData, error: receitasError } = await supabase
+        .from('receitas')
+        .select('valor')
+        .eq('user_id', user.id)
+        .gte('data', start)
+        .lte('data', end)
+
+      if (receitasError) {
+        console.error('Erro ao buscar receitas:', receitasError)
+      } else {
+        receitas = receitasData?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
+      }
+    } catch (error) {
+      console.error('Erro ao processar receitas:', error)
+      receitas = 0
+    }
+
+    // Poupança total - CORRIGIDO
+    let poupanca = 0
+    let totalMetas = 0
+    let metasAtingidas = 0
+    try {
+      const { data: poupancaData, error: poupancaError } = await supabase
+        .from('poupanca')
+        .select('valor_atual, valor_objetivo')
+        .eq('user_id', user.id)
+
+      if (poupancaError) {
+        console.error('Erro ao buscar poupanças:', poupancaError)
+        console.log('🔍 Verificando estrutura da tabela poupanca...')
+        
+        // Tentar buscar sem filtros para ver a estrutura
+        const { data: testData, error: testError } = await supabase
+          .from('poupanca')
+          .select('*')
+          .eq('user_id', user.id)
+          .limit(1)
+        
+        if (testError) {
+          console.error('Erro no teste da tabela poupanca:', testError)
+        } else {
+          console.log('📋 Estrutura encontrada na tabela poupanca:', testData)
+          
+          // Se a estrutura for diferente, tentar com os campos corretos
+          if (testData && testData.length > 0) {
+            const firstRecord = testData[0]
+            console.log('🔍 Campos disponíveis:', Object.keys(firstRecord))
+            
+            // Tentar buscar todos os registros
+            const { data: allPoupanca, error: allError } = await supabase
+              .from('poupanca')
+              .select('*')
+              .eq('user_id', user.id)
+            
+            if (!allError && allPoupanca) {
+              poupanca = allPoupanca.reduce((sum, item) => {
+                // Tentar diferentes campos possíveis
+                const valorAtual = item.valor_atual || item.valor || 0
+                return sum + (Number(valorAtual) || 0)
+              }, 0)
+              
+              totalMetas = allPoupanca.length
+              
+              metasAtingidas = allPoupanca.filter(item => {
+                const valorAtual = Number(item.valor_atual || item.valor || 0)
+                const valorObjetivo = Number(item.valor_objetivo || item.objetivo || item.meta || 0)
+                return valorAtual >= valorObjetivo
+              }).length
+            }
+          }
+        }
+      } else if (poupancaData && poupancaData.length > 0) {
+        console.log('✅ Dados de poupança encontrados:', poupancaData.length, 'registros')
+        
+        poupanca = poupancaData.reduce((sum, item) => {
+          const valorAtual = Number(item.valor_atual || 0)
+          return sum + valorAtual
+        }, 0)
+        
+        totalMetas = poupancaData.length
+        
+        metasAtingidas = poupancaData.filter(item => {
+          const valorAtual = Number(item.valor_atual || 0)
+          const valorObjetivo = Number(item.valor_objetivo || 0)
+          return valorAtual >= valorObjetivo
+        }).length
+      }
+    } catch (error) {
+      console.error('Erro ao processar poupança:', error)
+      poupanca = 0
+      totalMetas = 0
+      metasAtingidas = 0
+    }
+
+    // Atualizar estado
+    setFinanceData({
+      receitas: Number(receitas) || 0,
+      despesas: Number(despesas) || 0,
+      poupanca: Number(poupanca) || 0,
+      metaMensal: 3000, // Valor fixo ou buscar de configurações
+      totalMetas,
+      metasAtingidas
+    })
+
+    console.log('✅ Dados financeiros carregados:', { 
+      receitas, 
+      despesas, 
+      poupanca, 
+      totalMetas, 
+      metasAtingidas 
+    })
+
+  } catch (error) {
+    console.error('❌ Erro geral ao carregar dados financeiros:', error)
+    setFinanceData({
+      receitas: 0,
+      despesas: 0,
+      poupanca: 0,
+      metaMensal: 0,
+      totalMetas: 0,
+      metasAtingidas: 0
+    })
+  } finally {
+    setLoadingStates(prev => ({ ...prev, finance: false }))
   }
+}
 
   const loadRecentTransactions = async () => {
     if (!user) return

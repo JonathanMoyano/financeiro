@@ -1,181 +1,368 @@
-"use client"
+'use client'
 
-import * as React from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { CalendarIcon } from "lucide-react";
-import { toast } from "sonner";
+import { useState, useEffect } from 'react'
+import { 
+  TrendingUp,
+  TrendingDown,
+  X,
+  Loader2
+} from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/useAuth'
+import { useOpenTransaction } from '@/store/use-open-transaction'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 
-import { createTransaction } from "@/app/actions/transactions";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-// Tipos e Props
-type Category = {
-  id: string;
-  name: string;
+interface Categoria {
+  id: string
+  nome: string
+  tipo: 'receita' | 'despesa'
+  icone: string
+  cor: string
+  ativa: boolean
 }
 
-interface NewTransactionFormProps {
-  categories: Category[];
-  setOpen: (open: boolean) => void;
+interface TransactionFormProps {
+  onSuccess?: () => void
+  onError?: (error: string) => void
 }
 
-// Schema de Validação Zod
-const formSchema = z.object({
-  description: z.string().min(1, { message: "Descrição é obrigatória." }),
-  amount: z.coerce.number().positive({ message: "O valor deve ser um número positivo." }),
-  type: z.enum(['income', 'expense']),
-  date: z.date(),
-  categoryId: z.string().uuid().optional(),
-});
+export function TransactionForm({ onSuccess, onError }: TransactionFormProps) {
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [loading, setLoading] = useState(false)
+  const [loadingCategorias, setLoadingCategorias] = useState(false)
 
-type FormValues = z.infer<typeof formSchema>;
+  const { user } = useAuth()
+  const supabase = createClient()
+  const transactionStore = useOpenTransaction()
 
-// Componente do Formulário
-export function NewTransactionForm({ categories, setOpen }: NewTransactionFormProps) {
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
-
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      description: "",
-      amount: undefined,
-      type: "expense",
-      date: new Date(),
-      categoryId: undefined,
-    },
-  });
-
-  const onSubmit = async (data: FormValues) => {
-    setIsSubmitting(true);
-
-    const formData = new FormData();
-    formData.append("description", data.description);
-    formData.append("amount", String(data.amount));
-    formData.append("type", data.type);
-    formData.append("date", data.date.toISOString());
-    if (data.categoryId) {
-      formData.append("categoryId", data.categoryId);
+  useEffect(() => {
+    if (transactionStore.isOpen && user) {
+      loadCategorias()
     }
+  }, [transactionStore.isOpen, user])
+
+  const loadCategorias = async () => {
+    if (!user) return
+
+    setLoadingCategorias(true)
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('ativa', true)
+        .order('name')
+
+      if (error) throw error
+
+      const categoriasFormatadas = data?.map(cat => ({
+        id: cat.id,
+        nome: cat.name,
+        tipo: cat.type as 'receita' | 'despesa',
+        icone: cat.icon || '📁',
+        cor: cat.cor || '#6b7280',
+        ativa: cat.ativa
+      })) || []
+
+      setCategorias(categoriasFormatadas)
+    } catch (error) {
+      console.error('Erro ao carregar categorias:', error)
+      onError?.('Erro ao carregar categorias')
+    } finally {
+      setLoadingCategorias(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
 
     try {
-      // CORREÇÃO: Passando 'null' como o primeiro argumento
-      const result = await createTransaction(null, formData);
-      
-      if (result.success) {
-        toast.success(result.message);
-        setOpen(false);
-      } else {
-        toast.error(result.message || "Ocorreu um erro ao criar a transação.");
+      setLoading(true)
+
+      const valor = parseFloat(transactionStore.data.valor)
+      if (isNaN(valor) || valor <= 0) {
+        onError?.('Por favor, insira um valor válido.')
+        return
       }
-    } catch (error) {
-      toast.error("Ocorreu um erro inesperado. Tente novamente.");
+
+      const transacaoData = {
+        user_id: user.id,
+        descricao: transactionStore.data.descricao,
+        valor: valor,
+        tipo: transactionStore.data.tipo,
+        categoria: transactionStore.data.categoria,
+        data: transactionStore.data.data,
+        observacoes: transactionStore.data.observacoes || null,
+        metodo_pagamento: transactionStore.data.metodo_pagamento || null,
+        recorrente: transactionStore.data.recorrente,
+        favorito: transactionStore.data.favorito
+      }
+
+      // Escolher a tabela baseada no tipo
+      const tabela = transactionStore.data.tipo === 'receita' ? 'receitas' : 'despesas'
+
+      let result
+      if (transactionStore.editingId) {
+        // Atualizar transação existente
+        result = await supabase
+          .from(tabela)
+          .update(transacaoData)
+          .eq('id', transactionStore.editingId)
+          .eq('user_id', user.id)
+      } else {
+        // Criar nova transação
+        result = await supabase
+          .from(tabela)
+          .insert(transacaoData)
+      }
+
+      if (result.error) throw result.error
+
+      transactionStore.close()
+      onSuccess?.()
+
+    } catch (error: any) {
+      console.error('Erro ao salvar transação:', error)
+      onError?.('Erro ao salvar transação. Tente novamente.')
     } finally {
-      setIsSubmitting(false);
+      setLoading(false)
     }
-  };
+  }
+
+  const categoriasFiltradas = categorias.filter(cat => cat.tipo === transactionStore.data.tipo)
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-4">
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Descrição</FormLabel>
-              <FormControl><Input placeholder="Ex: Salário, Aluguel" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="amount"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Valor</FormLabel>
-              <FormControl><Input type="number" step="0.01" placeholder="R$ 0,00" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="date"
-          render={({ field }) => (
-            <FormItem className="flex flex-col">
-              <FormLabel>Data</FormLabel>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <FormControl>
-                    <Button
-                      variant={"outline"}
-                      className={cn("pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
-                    >
-                      {field.value ? format(field.value, "PPP", { locale: ptBR }) : <span>Escolha uma data</span>}
-                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                    </Button>
-                  </FormControl>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
-                </PopoverContent>
-              </Popover>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="type"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Tipo</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    <SelectItem value="expense">Despesa</SelectItem>
-                    <SelectItem value="income">Receita</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="categoryId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Categoria</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione (opcional)..." /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
-          {isSubmitting ? "Salvando..." : "Salvar Transação"}
-        </Button>
-      </form>
-    </Form>
+    <Dialog open={transactionStore.isOpen} onOpenChange={transactionStore.close}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {transactionStore.getTitle()}
+          </DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Tipo */}
+            <div>
+              <Label className="text-sm font-medium mb-3 block">
+                Tipo *
+              </Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => transactionStore.updateData({ tipo: 'receita' })}
+                  className={`p-3 rounded-lg border transition-colors flex items-center justify-center gap-2 ${
+                    transactionStore.data.tipo === 'receita'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                      : 'border-input hover:bg-accent'
+                  }`}
+                >
+                  <TrendingUp className="h-4 w-4" />
+                  Receita
+                </button>
+                <button
+                  type="button"
+                  onClick={() => transactionStore.updateData({ tipo: 'despesa' })}
+                  className={`p-3 rounded-lg border transition-colors flex items-center justify-center gap-2 ${
+                    transactionStore.data.tipo === 'despesa'
+                      ? 'bg-red-50 border-red-200 text-red-700'
+                      : 'border-input hover:bg-accent'
+                  }`}
+                >
+                  <TrendingDown className="h-4 w-4" />
+                  Despesa
+                </button>
+              </div>
+            </div>
+
+            {/* Valor */}
+            <div>
+              <Label htmlFor="valor" className="text-sm font-medium mb-2 block">
+                Valor (R$) *
+              </Label>
+              <Input
+                id="valor"
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                value={transactionStore.data.valor}
+                onChange={(e) => transactionStore.updateData({ valor: e.target.value })}
+                placeholder="0,00"
+              />
+            </div>
+          </div>
+
+          {/* Descrição */}
+          <div>
+            <Label htmlFor="descricao" className="text-sm font-medium mb-2 block">
+              Descrição *
+            </Label>
+            <Input
+              id="descricao"
+              type="text"
+              required
+              value={transactionStore.data.descricao}
+              onChange={(e) => transactionStore.updateData({ descricao: e.target.value })}
+              placeholder="Ex: Compra no supermercado"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Categoria */}
+            <div>
+              <Label htmlFor="categoria" className="text-sm font-medium mb-2 block">
+                Categoria *
+              </Label>
+              <Select
+                value={transactionStore.data.categoria}
+                onValueChange={(value) => transactionStore.updateData({ categoria: value })}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {loadingCategorias ? (
+                    <SelectItem value="" disabled>
+                      Carregando categorias...
+                    </SelectItem>
+                  ) : categoriasFiltradas.length > 0 ? (
+                    categoriasFiltradas.map(cat => (
+                      <SelectItem key={cat.id} value={cat.nome}>
+                        {cat.icone} {cat.nome}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="" disabled>
+                      Nenhuma categoria encontrada
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Data */}
+            <div>
+              <Label htmlFor="data" className="text-sm font-medium mb-2 block">
+                Data *
+              </Label>
+              <Input
+                id="data"
+                type="date"
+                required
+                value={transactionStore.data.data}
+                onChange={(e) => transactionStore.updateData({ data: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Método de pagamento */}
+          <div>
+            <Label htmlFor="metodo" className="text-sm font-medium mb-2 block">
+              Método de Pagamento
+            </Label>
+            <Select
+              value={transactionStore.data.metodo_pagamento}
+              onValueChange={(value) => transactionStore.updateData({ metodo_pagamento: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um método" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Nenhum</SelectItem>
+                <SelectItem value="Dinheiro">💵 Dinheiro</SelectItem>
+                <SelectItem value="Cartão de Débito">💳 Cartão de Débito</SelectItem>
+                <SelectItem value="Cartão de Crédito">💳 Cartão de Crédito</SelectItem>
+                <SelectItem value="PIX">📱 PIX</SelectItem>
+                <SelectItem value="Transferência">🏦 Transferência</SelectItem>
+                <SelectItem value="Boleto">📄 Boleto</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Observações */}
+          <div>
+            <Label htmlFor="observacoes" className="text-sm font-medium mb-2 block">
+              Observações
+            </Label>
+            <Textarea
+              id="observacoes"
+              rows={3}
+              value={transactionStore.data.observacoes}
+              onChange={(e) => transactionStore.updateData({ observacoes: e.target.value })}
+              placeholder="Informações adicionais sobre a transação..."
+            />
+          </div>
+
+          {/* Opções */}
+          <div className="flex flex-wrap gap-6">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="recorrente"
+                checked={transactionStore.data.recorrente}
+                onCheckedChange={(checked) => 
+                  transactionStore.updateData({ recorrente: !!checked })
+                }
+              />
+              <Label htmlFor="recorrente" className="text-sm cursor-pointer">
+                Transação recorrente
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="favorito"
+                checked={transactionStore.data.favorito}
+                onCheckedChange={(checked) => 
+                  transactionStore.updateData({ favorito: !!checked })
+                }
+              />
+              <Label htmlFor="favorito" className="text-sm cursor-pointer">
+                Marcar como favorito
+              </Label>
+            </div>
+          </div>
+
+          {/* Botões */}
+          <div className="flex justify-end gap-3 pt-6 border-t">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={transactionStore.close}
+              disabled={loading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="flex items-center gap-2"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {transactionStore.getSubmitText()} Transação
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
