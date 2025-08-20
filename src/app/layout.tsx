@@ -1,11 +1,10 @@
-// Em: src/app/layout.tsx
-
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Analytics } from "@vercel/analytics/react"; // Corrigido para /react, que é mais universal
+import { Analytics } from "@vercel/analytics/react";
+import { useMobileConfig } from "@/app/mobile-config"; // Importação adicionada
 
 const inter = Inter({
   subsets: ["latin"],
@@ -54,6 +53,13 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
 };
 
+// Componente criado para encapsular o hook de cliente
+function MobileConfigProvider() {
+  "use client"; // Necessário para usar hooks no App Router
+  useMobileConfig();
+  return null;
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -66,6 +72,9 @@ export default function RootLayout({
       className={`${inter.variable} antialiased`}
     >
       <body className={`${inter.className} min-h-screen font-sans antialiased`}>
+        {/* Componente de configuração mobile adicionado no início do body */}
+        <MobileConfigProvider />
+
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -80,10 +89,8 @@ export default function RootLayout({
           </TooltipProvider>
         </ThemeProvider>
 
-        {/* O Vercel Analytics foi adicionado aqui */}
         <Analytics />
 
-        {/* O script para o tema pode permanecer, pois manipula o DOM diretamente */}
         <script
           dangerouslySetInnerHTML={{
             __html: `

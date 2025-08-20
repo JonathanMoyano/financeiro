@@ -2,37 +2,37 @@
 const nextConfig = {
   // --- Configurações Essenciais e de Performance ---
   reactStrictMode: true,
-  swcMinify: true,
-  poweredByHeader: false, // Melhora a segurança
-  compress: true, // Habilita compressão Gzip
+  poweredByHeader: false,
+  compress: true,
 
-  // AS OPÇÕES 'output' FORAM REMOVIDAS.
-  // O padrão do Next.js será usado, que é o ideal para a Vercel.
+  // --- ADICIONE ISSO PARA O CAPACITOR ---
+  output: process.env.BUILD_MODE === "mobile" ? "export" : undefined,
+  trailingSlash: true, // Importante para o Capacitor
 
   // --- Otimização de Imagens ---
   images: {
-    formats: ['image/webp', 'image/avif'],
-    minimumCacheTTL: 60 * 60 * 24 * 30, // Cache de 30 dias
+    formats: ["image/webp", "image/avif"],
+    minimumCacheTTL: 60 * 60 * 24 * 30,
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+    // ADICIONE ISSO para mobile
+    unoptimized: process.env.BUILD_MODE === "mobile",
   },
 
   // --- Configurações do Servidor ---
-  experimental: {
-    serverComponentsExternalPackages: ['@supabase/supabase-js'],
-  },
+  serverExternalPackages: ["@supabase/supabase-js", "@supabase/ssr"],
 
   // --- Headers de Segurança e Performance ---
   async headers() {
     return [
       {
-        source: '/(.*)',
+        source: "/(.*)",
         headers: [
-          { key: 'X-DNS-Prefetch-Control', value: 'on' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-XSS-Protection', value: '1; mode=block' },
-          { key: 'Referrer-Policy', value: 'origin-when-cross-origin' },
+          { key: "X-DNS-Prefetch-Control", value: "on" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-XSS-Protection", value: "1; mode=block" },
+          { key: "Referrer-Policy", value: "origin-when-cross-origin" },
         ],
       },
     ];
@@ -40,10 +40,12 @@ const nextConfig = {
 
   // --- Configuração do Compilador ---
   compiler: {
-    // Remove `console.log` em produção
-    removeConsole: process.env.NODE_ENV === 'production' ? {
-      exclude: ['error', 'warn'],
-    } : false,
+    removeConsole:
+      process.env.NODE_ENV === "production"
+        ? {
+            exclude: ["error", "warn"],
+          }
+        : false,
   },
 
   // --- Otimizações do Webpack ---
@@ -52,18 +54,18 @@ const nextConfig = {
       config.optimization = {
         ...config.optimization,
         splitChunks: {
-          chunks: 'all',
+          chunks: "all",
           cacheGroups: {
             vendor: {
               test: /[\\/]node_modules[\\/]/,
-              name: 'vendors',
-              chunks: 'all',
+              name: "vendors",
+              chunks: "all",
             },
           },
         },
       };
     }
-    
+
     return config;
   },
 };
