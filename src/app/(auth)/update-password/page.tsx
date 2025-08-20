@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Lock, CheckCircle } from 'lucide-react';
 
@@ -16,7 +16,7 @@ export default function UpdatePasswordPage() {
   const [isValidSession, setIsValidSession] = useState(false);
   
   const router = useRouter();
-  const supabase = createClientComponentClient();
+   const supabase = createClient()
 
   useEffect(() => {
     // Verificar se há uma sessão válida de recuperação
