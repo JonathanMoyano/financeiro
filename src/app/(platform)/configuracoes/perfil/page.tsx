@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useTransition } from "react"; // Importa useTransition
 import { createBrowserClient } from "@supabase/ssr";
 import { Database } from "@/lib/database.types";
 import { useActionState } from "react";
