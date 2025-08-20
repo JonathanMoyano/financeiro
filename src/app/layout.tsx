@@ -4,7 +4,6 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Analytics } from "@vercel/analytics/react";
-import { useMobileConfig } from "@/app/mobile-config"; // Importação adicionada
 
 const inter = Inter({
   subsets: ["latin"],
@@ -56,7 +55,6 @@ export const metadata: Metadata = {
 // Componente criado para encapsular o hook de cliente
 function MobileConfigProvider() {
   "use client"; // Necessário para usar hooks no App Router
-  useMobileConfig();
   return null;
 }
 

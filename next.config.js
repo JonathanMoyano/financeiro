@@ -2,30 +2,24 @@
 const nextConfig = {
   // --- Configurações Essenciais e de Performance ---
   reactStrictMode: true,
-  poweredByHeader: false,
-  compress: true,
+  swcMinify: true,
+  poweredByHeader: false, // Melhora a segurança
+  compress: true, // Habilita compressão Gzip
 
-  // --- CONFIGURAÇÃO CONDICIONAL PARA MOBILE/WEB ---
-  output: process.env.BUILD_MODE === "mobile" ? "export" : undefined,
-  trailingSlash: true, // Importante para o Capacitor
+  // --- Configurações do Servidor ---
+  // A opção 'serverComponentsExternalPackages' foi movida para o nível principal.
+  serverExternalPackages: ["@supabase/supabase-js", "@supabase/ssr"],
 
   // --- Otimização de Imagens ---
   images: {
     formats: ["image/webp", "image/avif"],
-    minimumCacheTTL: 60 * 60 * 24 * 30,
+    minimumCacheTTL: 60 * 60 * 24 * 30, // Cache de 30 dias
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
-    // Desabilita otimização para mobile build
-    unoptimized: process.env.BUILD_MODE === "mobile",
   },
 
-  // --- Headers de Segurança e Performance (só para builds web) ---
+  // --- Headers de Segurança e Performance ---
   async headers() {
-    // Headers não funcionam com output: 'export', então só aplicamos para builds web
-    if (process.env.BUILD_MODE === "mobile") {
-      return [];
-    }
-
     return [
       {
         source: "/(.*)",
@@ -35,22 +29,6 @@ const nextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-XSS-Protection", value: "1; mode=block" },
           { key: "Referrer-Policy", value: "origin-when-cross-origin" },
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' blob: data: https:",
-              "font-src 'self'",
-              "object-src 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-              "frame-ancestors 'none'",
-              "block-all-mixed-content",
-              "upgrade-insecure-requests",
-            ].join("; "),
-          },
         ],
       },
     ];
@@ -58,6 +36,7 @@ const nextConfig = {
 
   // --- Configuração do Compilador ---
   compiler: {
+    // Remove `console.log` em produção
     removeConsole:
       process.env.NODE_ENV === "production"
         ? {
@@ -66,36 +45,23 @@ const nextConfig = {
         : false,
   },
 
+  // --- Configuração do ESLint ---
+  eslint: {
+    // Garante que o ESLint é executado durante o build para apanhar erros.
+    ignoreDuringBuilds: false,
+  },
+
   // --- Otimizações do Webpack ---
   webpack: (config, { dev, isServer }) => {
-    // Otimizações para produção
     if (!dev && !isServer) {
       config.optimization = {
         ...config.optimization,
         splitChunks: {
           chunks: "all",
           cacheGroups: {
-            default: {
-              minChunks: 2,
-              priority: -20,
-              reuseExistingChunk: true,
-            },
             vendor: {
               test: /[\\/]node_modules[\\/]/,
               name: "vendors",
-              priority: -10,
-              chunks: "all",
-            },
-            supabase: {
-              test: /[\\/]node_modules[\\/]@supabase[\\/]/,
-              name: "supabase",
-              priority: 10,
-              chunks: "all",
-            },
-            react: {
-              test: /[\\/]node_modules[\\/](react|react-dom)[\\/]/,
-              name: "react",
-              priority: 20,
               chunks: "all",
             },
           },
@@ -103,38 +69,7 @@ const nextConfig = {
       };
     }
 
-    // Configurações para resolver módulos do Supabase
-    config.resolve.fallback = {
-      ...config.resolve.fallback,
-      fs: false,
-      net: false,
-      tls: false,
-    };
-
-    // Ignorar warnings específicos do Supabase
-    config.ignoreWarnings = [
-      /Critical dependency: the request of a dependency is an expression/,
-      /Module not found: Error: Can't resolve 'encoding'/,
-    ];
-
     return config;
-  },
-
-  // --- Configurações de Transpilação ---
-  // A opção 'transpilePackages' é a correta para o Supabase.
-  // O conflito com 'serverComponentsExternalPackages' foi removido.
-  transpilePackages: [
-    "@supabase/supabase-js",
-    "@supabase/realtime-js",
-    "@supabase/postgrest-js",
-    "@supabase/storage-js",
-    "@supabase/auth-ui-react",
-    "@supabase/ssr",
-  ],
-
-  // --- Configurações de Environment Variables ---
-  env: {
-    CUSTOM_KEY: process.env.CUSTOM_KEY,
   },
 };
 
