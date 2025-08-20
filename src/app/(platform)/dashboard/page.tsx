@@ -73,7 +73,6 @@ interface Notification {
   created_at: string
   read: boolean
 }
-
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false)
   const [transactionsLoading, setTransactionsLoading] = useState(false)
@@ -122,7 +121,6 @@ export default function DashboardPage() {
     '#84cc16', // lime
     '#f97316'  // orange
   ]
-
   // Verificar se está montado no cliente
   useEffect(() => {
     setMounted(true)
@@ -199,167 +197,148 @@ export default function DashboardPage() {
       end: endDate.toISOString().split('T')[0]
     }
   }
+  const loadFinanceData = async () => {
+    if (!user) return
 
-const loadFinanceData = async () => {
-  if (!user) return
-
-  setLoadingStates(prev => ({ ...prev, finance: true }))
-  try {
-    console.log('💰 Carregando dados financeiros...')
-    
-    const { start, end } = getDateRange()
-    console.log('📅 Período:', start, 'até', end)
-
-    // Despesas do período
-    let despesas = 0
+    setLoadingStates(prev => ({ ...prev, finance: true }))
     try {
-      const { data: despesasData, error: despesasError } = await supabase
-        .from('despesas')
-        .select('valor')
-        .eq('user_id', user.id)
-        .gte('data', start)
-        .lte('data', end)
+      console.log('💰 Carregando dados financeiros...')
+      
+      const { start, end } = getDateRange()
+      console.log('📅 Período:', start, 'até', end)
 
-      if (despesasError) {
-        console.error('Erro ao buscar despesas:', despesasError)
-      } else {
-        despesas = despesasData?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
+      // Despesas do período
+      let despesas = 0
+      try {
+        const { data: despesasData, error: despesasError } = await supabase
+          .from('despesas')
+          .select('valor')
+          .eq('user_id', user.id)
+          .gte('data', start)
+          .lte('data', end)
+
+        if (despesasError) {
+          console.error('Erro ao buscar despesas:', despesasError)
+        } else {
+          despesas = despesasData?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
+        }
+      } catch (error) {
+        console.error('Erro ao processar despesas:', error)
+        despesas = 0
       }
-    } catch (error) {
-      console.error('Erro ao processar despesas:', error)
-      despesas = 0
-    }
 
-    // Receitas do período
-    let receitas = 0
-    try {
-      const { data: receitasData, error: receitasError } = await supabase
-        .from('receitas')
-        .select('valor')
-        .eq('user_id', user.id)
-        .gte('data', start)
-        .lte('data', end)
+      // Receitas do período
+      let receitas = 0
+      try {
+        const { data: receitasData, error: receitasError } = await supabase
+          .from('receitas')
+          .select('valor')
+          .eq('user_id', user.id)
+          .gte('data', start)
+          .lte('data', end)
 
-      if (receitasError) {
-        console.error('Erro ao buscar receitas:', receitasError)
-      } else {
-        receitas = receitasData?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
+        if (receitasError) {
+          console.error('Erro ao buscar receitas:', receitasError)
+        } else {
+          receitas = receitasData?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
+        }
+      } catch (error) {
+        console.error('Erro ao processar receitas:', error)
+        receitas = 0
       }
-    } catch (error) {
-      console.error('Erro ao processar receitas:', error)
-      receitas = 0
-    }
 
-    // Poupança total - CORRIGIDO
-    let poupanca = 0
-    let totalMetas = 0
-    let metasAtingidas = 0
-    try {
-      const { data: poupancaData, error: poupancaError } = await supabase
-        .from('poupanca')
-        .select('valor_atual, valor_objetivo')
-        .eq('user_id', user.id)
-
-      if (poupancaError) {
-        console.error('Erro ao buscar poupanças:', poupancaError)
-        console.log('🔍 Verificando estrutura da tabela poupanca...')
+      // Poupança total - CORRIGIDO
+      let poupanca = 0
+      let totalMetas = 0
+      let metasAtingidas = 0
+      
+      try {
+        // Primeira tentativa - buscar com campos padrão
+        console.log('🔍 Buscando dados de poupança...')
         
-        // Tentar buscar sem filtros para ver a estrutura
-        const { data: testData, error: testError } = await supabase
+        const { data: poupancaData, error: poupancaError } = await supabase
           .from('poupanca')
           .select('*')
           .eq('user_id', user.id)
-          .limit(1)
-        
-        if (testError) {
-          console.error('Erro no teste da tabela poupanca:', testError)
-        } else {
-          console.log('📋 Estrutura encontrada na tabela poupanca:', testData)
+
+        if (poupancaError) {
+          console.error('Erro ao buscar poupanças:', poupancaError.message || poupancaError)
           
-          // Se a estrutura for diferente, tentar com os campos corretos
-          if (testData && testData.length > 0) {
-            const firstRecord = testData[0]
-            console.log('🔍 Campos disponíveis:', Object.keys(firstRecord))
-            
-            // Tentar buscar todos os registros
-            const { data: allPoupanca, error: allError } = await supabase
-              .from('poupanca')
-              .select('*')
-              .eq('user_id', user.id)
-            
-            if (!allError && allPoupanca) {
-              poupanca = allPoupanca.reduce((sum, item) => {
-                // Tentar diferentes campos possíveis
-                const valorAtual = item.valor_atual || item.valor || 0
-                return sum + (Number(valorAtual) || 0)
-              }, 0)
-              
-              totalMetas = allPoupanca.length
-              
-              metasAtingidas = allPoupanca.filter(item => {
-                const valorAtual = Number(item.valor_atual || item.valor || 0)
-                const valorObjetivo = Number(item.valor_objetivo || item.objetivo || item.meta || 0)
-                return valorAtual >= valorObjetivo
-              }).length
-            }
-          }
+          // Se der erro, pode ser que a tabela não existe ou não tem dados
+          // Vamos tentar criar alguns dados mock para demonstração
+          console.log('⚠️ Tabela poupança pode não existir ou estar vazia')
+          poupanca = 0
+          totalMetas = 0
+          metasAtingidas = 0
+          
+        } else if (poupancaData && poupancaData.length > 0) {
+          console.log('✅ Dados de poupança encontrados:', poupancaData.length, 'registros')
+          console.log('📋 Estrutura dos dados:', poupancaData[0])
+          
+          // Somar valores atuais
+          poupanca = poupancaData.reduce((sum, item) => {
+            // Tentar diferentes campos possíveis para valor atual
+            const valorAtual = item.valor_atual || item.valor || item.valor_economizado || 0
+            return sum + (Number(valorAtual) || 0)
+          }, 0)
+          
+          totalMetas = poupancaData.length
+          
+          // Contar metas atingidas
+          metasAtingidas = poupancaData.filter(item => {
+            const valorAtual = Number(item.valor_atual || item.valor || item.valor_economizado || 0)
+            const valorObjetivo = Number(item.valor_objetivo || item.objetivo || item.meta || item.valor_meta || 0)
+            return valorObjetivo > 0 && valorAtual >= valorObjetivo
+          }).length
+          
+          console.log('💰 Resumo poupança:', { poupanca, totalMetas, metasAtingidas })
+          
+        } else {
+          console.log('ℹ️ Nenhum dado de poupança encontrado')
+          poupanca = 0
+          totalMetas = 0
+          metasAtingidas = 0
         }
-      } else if (poupancaData && poupancaData.length > 0) {
-        console.log('✅ Dados de poupança encontrados:', poupancaData.length, 'registros')
         
-        poupanca = poupancaData.reduce((sum, item) => {
-          const valorAtual = Number(item.valor_atual || 0)
-          return sum + valorAtual
-        }, 0)
-        
-        totalMetas = poupancaData.length
-        
-        metasAtingidas = poupancaData.filter(item => {
-          const valorAtual = Number(item.valor_atual || 0)
-          const valorObjetivo = Number(item.valor_objetivo || 0)
-          return valorAtual >= valorObjetivo
-        }).length
+      } catch (error) {
+        console.error('❌ Erro geral ao processar poupança:', error)
+        poupanca = 0
+        totalMetas = 0
+        metasAtingidas = 0
       }
+
+      // Atualizar estado
+      setFinanceData({
+        receitas: Number(receitas) || 0,
+        despesas: Number(despesas) || 0,
+        poupanca: Number(poupanca) || 0,
+        metaMensal: 3000, // Valor fixo ou buscar de configurações
+        totalMetas,
+        metasAtingidas
+      })
+
+      console.log('✅ Dados financeiros carregados:', { 
+        receitas, 
+        despesas, 
+        poupanca, 
+        totalMetas, 
+        metasAtingidas 
+      })
+
     } catch (error) {
-      console.error('Erro ao processar poupança:', error)
-      poupanca = 0
-      totalMetas = 0
-      metasAtingidas = 0
+      console.error('❌ Erro geral ao carregar dados financeiros:', error)
+      setFinanceData({
+        receitas: 0,
+        despesas: 0,
+        poupanca: 0,
+        metaMensal: 0,
+        totalMetas: 0,
+        metasAtingidas: 0
+      })
+    } finally {
+      setLoadingStates(prev => ({ ...prev, finance: false }))
     }
-
-    // Atualizar estado
-    setFinanceData({
-      receitas: Number(receitas) || 0,
-      despesas: Number(despesas) || 0,
-      poupanca: Number(poupanca) || 0,
-      metaMensal: 3000, // Valor fixo ou buscar de configurações
-      totalMetas,
-      metasAtingidas
-    })
-
-    console.log('✅ Dados financeiros carregados:', { 
-      receitas, 
-      despesas, 
-      poupanca, 
-      totalMetas, 
-      metasAtingidas 
-    })
-
-  } catch (error) {
-    console.error('❌ Erro geral ao carregar dados financeiros:', error)
-    setFinanceData({
-      receitas: 0,
-      despesas: 0,
-      poupanca: 0,
-      metaMensal: 0,
-      totalMetas: 0,
-      metasAtingidas: 0
-    })
-  } finally {
-    setLoadingStates(prev => ({ ...prev, finance: false }))
   }
-}
-
   const loadRecentTransactions = async () => {
     if (!user) return
 
@@ -397,7 +376,35 @@ const loadFinanceData = async () => {
         console.error('Erro ao buscar despesas:', error)
       }
 
-      // Buscar poupanças recentes
+      // Buscar receitas recentes
+      try {
+        const { data: receitasData, error: receitasError } = await supabase
+          .from('receitas')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        if (!receitasError && receitasData) {
+          receitasData.forEach(receita => {
+            if (receita && receita.id) {
+              transactions.push({
+                id: receita.id,
+                tipo: 'receita',
+                descricao: receita.descricao || 'Sem descrição',
+                valor: Number(receita.valor) || 0,
+                data: receita.data || new Date().toISOString().split('T')[0],
+                categoria: receita.categoria || 'Receita',
+                created_at: receita.created_at || new Date().toISOString()
+              })
+            }
+          })
+        }
+      } catch (error) {
+        console.error('Erro ao buscar receitas:', error)
+      }
+
+      // Buscar poupanças recentes (com tratamento de erro melhorado)
       try {
         const { data: poupancaData, error: poupancaError } = await supabase
           .from('poupanca')
@@ -412,17 +419,19 @@ const loadFinanceData = async () => {
               transactions.push({
                 id: poupanca.id,
                 tipo: 'poupanca',
-                descricao: poupanca.descricao || 'Sem descrição',
-                valor: Number(poupanca.valor_atual) || 0,
+                descricao: poupanca.descricao || 'Meta de poupança',
+                valor: Number(poupanca.valor_atual || poupanca.valor || 0),
                 data: poupanca.data_objetivo || new Date().toISOString().split('T')[0],
                 categoria: poupanca.categoria || 'Poupança',
                 created_at: poupanca.created_at || new Date().toISOString()
               })
             }
           })
+        } else if (poupancaError) {
+          console.log('ℹ️ Erro ou sem dados de poupança para transações:', poupancaError.message)
         }
       } catch (error) {
-        console.error('Erro ao buscar poupanças:', error)
+        console.error('Erro ao buscar poupanças para transações:', error)
       }
 
       // Ordenar por data e limitar
@@ -456,20 +465,35 @@ const loadFinanceData = async () => {
         const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0]
         
         let despesasMes = 0
+        let receitasMes = 0
+        
         try {
-          const { data } = await supabase
+          // Buscar despesas do mês
+          const { data: despesasData } = await supabase
             .from('despesas')
             .select('valor')
             .eq('user_id', user.id)
             .gte('data', startOfMonth)
             .lte('data', endOfMonth)
           
-          despesasMes = data?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
+          despesasMes = despesasData?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
+          
+          // Buscar receitas do mês
+          const { data: receitasData } = await supabase
+            .from('receitas')
+            .select('valor')
+            .eq('user_id', user.id)
+            .gte('data', startOfMonth)
+            .lte('data', endOfMonth)
+          
+          receitasMes = receitasData?.reduce((sum, item) => sum + (Number(item.valor) || 0), 0) || 0
+          
         } catch (error) {
-          console.error(`Erro ao buscar despesas do mês ${date.getMonth() + 1}:`, error)
+          console.error(`Erro ao buscar dados do mês ${date.getMonth() + 1}:`, error)
+          // Usar valores padrão se der erro
+          receitasMes = 2500
+          despesasMes = 2000
         }
-        
-        const receitasMes = 2500 // Mock - substituir por dados reais
         
         monthlyResults.push({
           mes: date.toLocaleDateString('pt-BR', { month: 'short' }),
@@ -489,7 +513,6 @@ const loadFinanceData = async () => {
       setLoadingStates(prev => ({ ...prev, monthly: false }))
     }
   }
-
   const loadCategoryData = async () => {
     if (!user) return
 
@@ -570,7 +593,7 @@ const loadFinanceData = async () => {
         {
           id: '3',
           title: 'Relatório mensal disponível',
-          message: 'Seu relatório financeiro de outubro está pronto.',
+          message: 'Seu relatório financeiro de agosto está pronto.',
           type: 'info',
           created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
           read: true
@@ -668,9 +691,7 @@ const loadFinanceData = async () => {
   const saldo = (financeData?.receitas || 0) - (financeData?.despesas || 0)
   const progressoMeta = (financeData?.metaMensal || 0) > 0 ? (saldo / financeData.metaMensal) * 100 : 0
   const metasProgress = (financeData?.totalMetas || 0) > 0 ? 
-    (financeData.metasAtingidas / financeData.totalMetas) * 100 : 0
-
-  // Loading inicial
+    (financeData.metasAtingidas / financeData.totalMetas) * 100 : 0// Loading inicial
   if (!mounted || authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -700,7 +721,6 @@ const loadFinanceData = async () => {
       </div>
     )
   }
-
   return (
     <div className="space-y-6">
       {/* Alertas */}
@@ -859,11 +879,10 @@ const loadFinanceData = async () => {
           </button>
         </div>
       </div>
-
       {/* Cards principais de resumo */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Saldo */}
-        <div className="bg-card rounded-xl p-6 border hover:shadow-md transition-all duration-200">
+        <div className="bg-card rounded-xl p-6 border hover:shadow-md transition-all duration-200 relative">
           <div className="flex items-center justify-between mb-4">
             <div className={`p-3 rounded-xl ${saldo >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
               <Wallet className={`h-6 w-6 ${saldo >= 0 ? 'text-emerald-500' : 'text-red-500'}`} />
@@ -963,7 +982,6 @@ const loadFinanceData = async () => {
           )}
         </div>
       </div>
-
       {/* Cards de métricas avançadas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Progresso da meta mensal */}
@@ -1052,7 +1070,6 @@ const loadFinanceData = async () => {
           </div>
         </div>
       </div>
-
       {/* Grid principal com gráficos e dados */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Gráfico de evolução mensal */}
@@ -1219,7 +1236,6 @@ const loadFinanceData = async () => {
           </div>
         </div>
       </div>
-
       {/* Ações rápidas */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <button
@@ -1282,7 +1298,6 @@ const loadFinanceData = async () => {
           </div>
         </button>
       </div>
-
       {/* Transações recentes */}
       <div className="bg-card rounded-xl border">
         <div className="p-6 border-b">
@@ -1367,7 +1382,6 @@ const loadFinanceData = async () => {
           )}
         </div>
       </div>
-
       {/* Modal Poupança */}
       {showPoupancaModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm overflow-y-auto h-full w-full z-50">

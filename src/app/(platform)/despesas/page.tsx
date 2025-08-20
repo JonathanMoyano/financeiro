@@ -39,8 +39,8 @@ interface Transacao {
   data: string
   observacoes?: string
   metodo_pagamento?: string
-  recorrente: boolean
-  favorito: boolean
+  recorrente?: boolean
+  favorito?: boolean
   created_at: string
   updated_at: string
 }
@@ -58,12 +58,10 @@ interface NovaTransacao {
 }
 
 interface Categoria {
-  id: string
   nome: string
   tipo: 'receita' | 'despesa'
   icone: string
   cor: string
-  ativa: boolean
 }
 
 interface Filtros {
@@ -74,9 +72,7 @@ interface Filtros {
   valorMin: string
   valorMax: string
   busca: string
-}
-
-export default function DespesasPage() {
+}export default function TransacoesPage() {
   const [mounted, setMounted] = useState(false)
   const [transacoes, setTransacoes] = useState<Transacao[]>([])
   const [categorias, setCategorias] = useState<Categoria[]>([])
@@ -121,7 +117,25 @@ export default function DespesasPage() {
   const { user, loading: authLoading } = useAuth()
   const supabase = createClient()
 
-  // Verificar se está montado
+  // Categorias padrão (corrigidas)
+  const categoriasDefault: Categoria[] = [
+    // Categorias de Despesa
+    { nome: 'Alimentação', tipo: 'despesa', icone: '🍽️', cor: '#ef4444' },
+    { nome: 'Transporte', tipo: 'despesa', icone: '🚗', cor: '#3b82f6' },
+    { nome: 'Saúde', tipo: 'despesa', icone: '🏥', cor: '#10b981' },
+    { nome: 'Educação', tipo: 'despesa', icone: '📚', cor: '#8b5cf6' },
+    { nome: 'Lazer', tipo: 'despesa', icone: '🎉', cor: '#f59e0b' },
+    { nome: 'Casa', tipo: 'despesa', icone: '🏠', cor: '#06b6d4' },
+    { nome: 'Roupas', tipo: 'despesa', icone: '👕', cor: '#84cc16' },
+    { nome: 'Outros', tipo: 'despesa', icone: '📦', cor: '#6b7280' },
+    
+    // Categorias de Receita  
+    { nome: 'Salário', tipo: 'receita', icone: '💼', cor: '#10b981' },
+    { nome: 'Freelance', tipo: 'receita', icone: '💻', cor: '#3b82f6' },
+    { nome: 'Investimentos', tipo: 'receita', icone: '📈', cor: '#8b5cf6' },
+    { nome: 'Vendas', tipo: 'receita', icone: '🛒', cor: '#f59e0b' },
+    { nome: 'Outros', tipo: 'receita', icone: '💰', cor: '#6b7280' }
+  ]// Verificar se está montado
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -142,95 +156,22 @@ export default function DespesasPage() {
   }, [user, authLoading, mounted, currentPage, filtros])
 
   const loadCategorias = async () => {
-    if (!user) return
-
     try {
-      console.log('🏷️ Carregando categorias para usuário:', user.id)
+      console.log('🏷️ Carregando categorias...')
       
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('ativa', true)
-        .order('name')
-
-      if (error) {
-        console.error('Erro ao buscar categorias:', error)
-        // Se não há categorias do usuário, criar categorias padrão
-        await createDefaultCategories()
-        return
-      }
-
-      const categoriasFormatadas = data?.map(cat => ({
-        id: cat.id,
-        nome: cat.name,
-        tipo: cat.type as 'receita' | 'despesa',
-        icone: cat.icon || '📁',
-        cor: cat.cor || '#6b7280',
-        ativa: cat.ativa
-      })) || []
-
-      setCategorias(categoriasFormatadas)
-      console.log('✅ Categorias carregadas:', categoriasFormatadas.length)
-
-      // Se não há categorias, criar padrão
-      if (categoriasFormatadas.length === 0) {
-        await createDefaultCategories()
-      }
-
+      // Usar categorias padrão diretamente (mais confiável)
+      setCategorias(categoriasDefault)
+      console.log('✅ Categorias carregadas:', categoriasDefault.length)
+      
     } catch (error) {
       console.error('❌ Erro ao carregar categorias:', error)
-      await createDefaultCategories()
+      // Fallback para categorias padrão
+      setCategorias(categoriasDefault)
     }
   }
 
-  const createDefaultCategories = async () => {
-    if (!user) return
-
-    const categoriasDefault = [
-      // Categorias de Despesa
-      { name: 'Alimentação', type: 'despesa', icon: '🍽️', cor: '#ef4444' },
-      { name: 'Transporte', type: 'despesa', icon: '🚗', cor: '#3b82f6' },
-      { name: 'Saúde', type: 'despesa', icon: '🏥', cor: '#10b981' },
-      { name: 'Educação', type: 'despesa', icon: '📚', cor: '#8b5cf6' },
-      { name: 'Lazer', type: 'despesa', icon: '🎉', cor: '#f59e0b' },
-      { name: 'Casa', type: 'despesa', icon: '🏠', cor: '#06b6d4' },
-      { name: 'Roupas', type: 'despesa', icon: '👕', cor: '#84cc16' },
-      { name: 'Outros', type: 'despesa', icon: '📦', cor: '#6b7280' },
-      
-      // Categorias de Receita
-      { name: 'Salário', type: 'receita', icon: '💼', cor: '#10b981' },
-      { name: 'Freelance', type: 'receita', icon: '💻', cor: '#3b82f6' },
-      { name: 'Investimentos', type: 'receita', icon: '📈', cor: '#8b5cf6' },
-      { name: 'Vendas', type: 'receita', icon: '🛒', cor: '#f59e0b' },
-      { name: 'Outros', type: 'receita', icon: '💰', cor: '#6b7280' }
-    ]
-
-    try {
-      console.log('🔧 Criando categorias padrão...')
-      
-      const { data, error } = await supabase
-        .from('categories')
-        .insert(
-          categoriasDefault.map(cat => ({
-            ...cat,
-            user_id: user.id,
-            ativa: true
-          }))
-        )
-        .select()
-
-      if (error) throw error
-
-      console.log('✅ Categorias padrão criadas:', data?.length)
-      
-      // Recarregar categorias
-      await loadCategorias()
-      
-    } catch (error) {
-      console.error('❌ Erro ao criar categorias padrão:', error)
-      setError('Erro ao criar categorias padrão')
-    }
+  const getCategoriasPorTipo = (tipo: 'receita' | 'despesa'): Categoria[] => {
+    return categorias.filter(cat => cat.tipo === tipo)
   }
 
   const loadTransacoes = async () => {
@@ -238,80 +179,126 @@ export default function DespesasPage() {
 
     setLoading(true)
     try {
-      let query = supabase
-        .from('despesas')
-        .select('*', { count: 'exact' })
-        .eq('user_id', user.id)
+      console.log('📋 Carregando transações...')
+      
+      const todasTransacoes: Transacao[] = []
+      
+      // Buscar despesas
+      if (filtros.tipo === 'todos' || filtros.tipo === 'despesa') {
+        try {
+          let queryDespesas = supabase
+            .from('despesas')
+            .select('*')
+            .eq('user_id', user.id)
 
-      // Aplicar filtros
-      if (filtros.tipo !== 'todos') {
-        query = query.eq('tipo', filtros.tipo)
+          // Aplicar filtros para despesas
+          if (filtros.categoria) {
+            queryDespesas = queryDespesas.eq('categoria', filtros.categoria)
+          }
+          if (filtros.dataInicio) {
+            queryDespesas = queryDespesas.gte('data', filtros.dataInicio)
+          }
+          if (filtros.dataFim) {
+            queryDespesas = queryDespesas.lte('data', filtros.dataFim)
+          }
+          if (filtros.valorMin) {
+            queryDespesas = queryDespesas.gte('valor', parseFloat(filtros.valorMin))
+          }
+          if (filtros.valorMax) {
+            queryDespesas = queryDespesas.lte('valor', parseFloat(filtros.valorMax))
+          }
+          if (filtros.busca) {
+            queryDespesas = queryDespesas.or(`descricao.ilike.%${filtros.busca}%,observacoes.ilike.%${filtros.busca}%`)
+          }
+
+          const { data: despesas, error: despesasError } = await queryDespesas
+            .order('created_at', { ascending: false })
+
+          if (!despesasError && despesas) {
+            despesas.forEach(despesa => {
+              todasTransacoes.push({
+                ...despesa,
+                tipo: 'despesa' as const,
+                recorrente: despesa.recorrente || false,
+                favorito: despesa.favorito || false
+              })
+            })
+          } else if (despesasError) {
+            console.error('Erro ao buscar despesas:', despesasError)
+          }
+        } catch (error) {
+          console.error('Erro ao processar despesas:', error)
+        }
       }
 
-      if (filtros.categoria) {
-        query = query.eq('categoria', filtros.categoria)
-      }
-
-      if (filtros.dataInicio) {
-        query = query.gte('data', filtros.dataInicio)
-      }
-
-      if (filtros.dataFim) {
-        query = query.lte('data', filtros.dataFim)
-      }
-
-      if (filtros.valorMin) {
-        query = query.gte('valor', parseFloat(filtros.valorMin))
-      }
-
-      if (filtros.valorMax) {
-        query = query.lte('valor', parseFloat(filtros.valorMax))
-      }
-
-      if (filtros.busca) {
-        query = query.or(`descricao.ilike.%${filtros.busca}%,observacoes.ilike.%${filtros.busca}%`)
-      }
-
-      // Paginação
-      const from = (currentPage - 1) * itemsPerPage
-      const to = from + itemsPerPage - 1
-
-      const { data, error, count } = await query
-        .order('created_at', { ascending: false })
-        .range(from, to)
-
-      if (error) throw error
-
-      // Buscar também receitas se o filtro permitir
-      let receitasData: any[] = []
+      // Buscar receitas
       if (filtros.tipo === 'todos' || filtros.tipo === 'receita') {
-        const { data: receitas } = await supabase
-          .from('receitas')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(50) // Limitar para performance
+        try {
+          let queryReceitas = supabase
+            .from('receitas')
+            .select('*')
+            .eq('user_id', user.id)
 
-        receitasData = receitas || []
+          // Aplicar filtros para receitas
+          if (filtros.categoria) {
+            queryReceitas = queryReceitas.eq('categoria', filtros.categoria)
+          }
+          if (filtros.dataInicio) {
+            queryReceitas = queryReceitas.gte('data', filtros.dataInicio)
+          }
+          if (filtros.dataFim) {
+            queryReceitas = queryReceitas.lte('data', filtros.dataFim)
+          }
+          if (filtros.valorMin) {
+            queryReceitas = queryReceitas.gte('valor', parseFloat(filtros.valorMin))
+          }
+          if (filtros.valorMax) {
+            queryReceitas = queryReceitas.lte('valor', parseFloat(filtros.valorMax))
+          }
+          if (filtros.busca) {
+            queryReceitas = queryReceitas.or(`descricao.ilike.%${filtros.busca}%,observacoes.ilike.%${filtros.busca}%`)
+          }
+
+          const { data: receitas, error: receitasError } = await queryReceitas
+            .order('created_at', { ascending: false })
+
+          if (!receitasError && receitas) {
+            receitas.forEach(receita => {
+              todasTransacoes.push({
+                ...receita,
+                tipo: 'receita' as const,
+                recorrente: receita.recorrente || false,
+                favorito: receita.favorito || false
+              })
+            })
+          } else if (receitasError) {
+            console.error('Erro ao buscar receitas:', receitasError)
+          }
+        } catch (error) {
+          console.error('Erro ao processar receitas:', error)
+        }
       }
 
-      // Combinar despesas e receitas
-      const todasTransacoes = [
-        ...(data || []),
-        ...receitasData
-      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      // Ordenar todas as transações por data de criação
+      todasTransacoes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
-      setTransacoes(todasTransacoes)
-      setTotalPages(Math.ceil((count || 0) / itemsPerPage))
+      // Aplicar paginação
+      const startIndex = (currentPage - 1) * itemsPerPage
+      const endIndex = startIndex + itemsPerPage
+      const transacoesPaginadas = todasTransacoes.slice(startIndex, endIndex)
+
+      setTransacoes(transacoesPaginadas)
+      setTotalPages(Math.ceil(todasTransacoes.length / itemsPerPage))
+
+      console.log('✅ Transações carregadas:', transacoesPaginadas.length)
 
     } catch (error) {
-      console.error('Erro ao carregar transações:', error)
+      console.error('❌ Erro ao carregar transações:', error)
       setError('Erro ao carregar transações')
     } finally {
       setLoading(false)
     }
   }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return
@@ -326,11 +313,15 @@ export default function DespesasPage() {
         return
       }
 
+      if (!novaTransacao.categoria) {
+        setError('Por favor, selecione uma categoria.')
+        return
+      }
+
       const transacaoData = {
         user_id: user.id,
         descricao: novaTransacao.descricao,
         valor: valor,
-        tipo: novaTransacao.tipo,
         categoria: novaTransacao.categoria,
         data: novaTransacao.data,
         observacoes: novaTransacao.observacoes || null,
@@ -380,7 +371,7 @@ export default function DespesasPage() {
       setTimeout(() => setSuccess(null), 3000)
 
     } catch (error: any) {
-      console.error('Erro ao salvar transação:', error)
+      console.error('❌ Erro ao salvar transação:', error)
       setError('Erro ao salvar transação. Tente novamente.')
     } finally {
       setLoading(false)
@@ -408,7 +399,7 @@ export default function DespesasPage() {
       setTimeout(() => setSuccess(null), 3000)
 
     } catch (error) {
-      console.error('Erro ao excluir transação:', error)
+      console.error('❌ Erro ao excluir transação:', error)
       setError('Erro ao excluir transação')
     } finally {
       setLoading(false)
@@ -424,8 +415,8 @@ export default function DespesasPage() {
       data: transacao.data,
       observacoes: transacao.observacoes || '',
       metodo_pagamento: transacao.metodo_pagamento || '',
-      recorrente: transacao.recorrente,
-      favorito: transacao.favorito
+      recorrente: transacao.recorrente || false,
+      favorito: transacao.favorito || false
     })
     setEditingId(transacao.id)
     setShowModal(true)
@@ -470,9 +461,7 @@ export default function DespesasPage() {
     link.href = URL.createObjectURL(blob)
     link.download = `transacoes_${new Date().toISOString().split('T')[0]}.csv`
     link.click()
-  }
-
-  // Loading inicial
+  }// Loading inicial
   if (!mounted || authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -498,26 +487,6 @@ export default function DespesasPage() {
     .reduce((sum, t) => sum + t.valor, 0)
 
   const saldo = totalReceitas - totalDespesas
-
-  // Opções de filtro corrigidas
-  const filterOptions = [
-    {
-      label: 'Tipo',
-      value: 'tipo',
-      options: [
-        { label: 'Receita', value: 'receita' },
-        { label: 'Despesa', value: 'despesa' }
-      ]
-    },
-    {
-      label: 'Categoria',
-      value: 'categoria',
-      options: categorias.map(cat => ({
-        label: `${cat.icone} ${cat.nome}`,
-        value: cat.nome
-      }))
-    }
-  ]
 
   return (
     <div className="space-y-6">
@@ -639,9 +608,7 @@ export default function DespesasPage() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Filtros e busca */}
+      </div>{/* Filtros e busca */}
       <div className="bg-card rounded-xl border p-6">
         <div className="flex flex-col lg:flex-row gap-4">
           {/* Busca */}
@@ -676,8 +643,8 @@ export default function DespesasPage() {
             className="px-3 py-2 border border-input rounded-lg bg-background focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
             <option value="">Todas as categorias</option>
-            {categorias.map(cat => (
-              <option key={cat.id} value={cat.nome}>
+            {categorias.map((cat, index) => (
+              <option key={`${cat.nome}-${index}`} value={cat.nome}>
                 {cat.icone} {cat.nome}
               </option>
             ))}
@@ -749,9 +716,7 @@ export default function DespesasPage() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* Lista de transações */}
+      </div>{/* Lista de transações */}
       <div className="bg-card rounded-xl border">
         <div className="p-6 border-b">
           <div className="flex items-center justify-between">
@@ -896,9 +861,7 @@ export default function DespesasPage() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Modal de Nova/Editar Transação */}
+      </div>{/* Modal de Nova/Editar Transação */}
       {showModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm overflow-y-auto h-full w-full z-50">
           <div className="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-xl bg-card my-8">
@@ -997,7 +960,7 @@ export default function DespesasPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Categoria */}
+                {/* Categoria - CORRIGIDA */}
                 <div>
                   <label className="block text-sm font-medium mb-2">
                     Categoria *
@@ -1009,17 +972,15 @@ export default function DespesasPage() {
                     onChange={(e) => setNovaTransacao(prev => ({ ...prev, categoria: e.target.value }))}
                   >
                     <option value="">Selecione uma categoria</option>
-                    {categorias
-                      .filter(cat => cat.tipo === novaTransacao.tipo)
-                      .map(cat => (
-                        <option key={cat.id} value={cat.nome}>
-                          {cat.icone} {cat.nome}
-                        </option>
-                      ))}
+                    {getCategoriasPorTipo(novaTransacao.tipo).map((cat, index) => (
+                      <option key={`${cat.nome}-${cat.tipo}-${index}`} value={cat.nome}>
+                        {cat.icone} {cat.nome}
+                      </option>
+                    ))}
                   </select>
-                  {categorias.filter(cat => cat.tipo === novaTransacao.tipo).length === 0 && (
+                  {getCategoriasPorTipo(novaTransacao.tipo).length === 0 && (
                     <p className="text-xs text-yellow-600 mt-1">
-                      Nenhuma categoria encontrada para {novaTransacao.tipo}. As categorias serão criadas automaticamente.
+                      Nenhuma categoria encontrada para {novaTransacao.tipo}.
                     </p>
                   )}
                 </div>
@@ -1037,9 +998,7 @@ export default function DespesasPage() {
                     onChange={(e) => setNovaTransacao(prev => ({ ...prev, data: e.target.value }))}
                   />
                 </div>
-              </div>
-
-              {/* Método de pagamento */}
+              </div>{/* Método de pagamento */}
               <div>
                 <label className="block text-sm font-medium mb-2">
                   Método de Pagamento
@@ -1094,6 +1053,23 @@ export default function DespesasPage() {
                   />
                   <span className="text-sm">Marcar como favorito</span>
                 </label>
+              </div>
+
+              {/* Preview das categorias disponíveis */}
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <h4 className="text-sm font-medium mb-3">
+                  Categorias disponíveis para {novaTransacao.tipo}:
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {getCategoriasPorTipo(novaTransacao.tipo).map((cat, index) => (
+                    <span
+                      key={`preview-${cat.nome}-${index}`}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-background border rounded-full"
+                    >
+                      {cat.icone} {cat.nome}
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {/* Botões */}

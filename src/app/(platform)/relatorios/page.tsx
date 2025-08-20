@@ -1,293 +1,681 @@
-"use client";
+'use client'
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
-import { Database } from '@/lib/database.types';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
+import { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { 
-  Loader2, 
-  Wallet, 
   Calendar,
+  TrendingUp,
+  TrendingDown,
+  Wallet,
+  PiggyBank,
+  Printer,
   RefreshCw,
-  Clock,
+  Loader2,
+  Eye,
+  EyeOff,
   BarChart3,
-  PieChart as PieChartIcon,
-  Activity,
-  DollarSign,
-  TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon,
-  Printer, // Ícone de Impressora
-} from 'lucide-react';
-import { toast } from 'sonner';
+  PieChart,
+  Filter,
+  Download,
+  AlertCircle
+} from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/useAuth'
 
-// Tipos
-type TransactionWithCategory = {
-  id: string;
-  created_at: string;
-  description: string | null;
-  amount: number;
-  type: 'income' | 'expense';
-  categories: { name: string } | null;
-};
+// Interfaces
+interface TransactionData {
+  id: string
+  descricao: string
+  valor: number
+  tipo: 'receita' | 'despesa'
+  categoria: string
+  data: string
+  created_at: string
+}
 
-type PeriodFilter = '7d' | '30d' | '90d' | '365d' | 'all';
+interface PoupancaData {
+  id: string
+  descricao: string
+  valor_atual: number
+  valor_objetivo: number
+  categoria: string
+  data_objetivo: string
+  created_at: string
+}
 
-// Constantes
-const COLORS = ['#ef4444', '#3b82f6', '#f97316', '#8b5cf6', '#22c55e', '#ec4899', '#14b8a6', '#f59e0b'];
-const PERIOD_OPTIONS = [
-  { value: '7d' as PeriodFilter, label: 'Últimos 7 dias' },
-  { value: '30d' as PeriodFilter, label: 'Últimos 30 dias' },
-  { value: '90d' as PeriodFilter, label: 'Últimos 90 dias' },
-  { value: '365d' as PeriodFilter, label: 'Último ano' },
-  { value: 'all' as PeriodFilter, label: 'Todo o período' },
-];
+interface ReportData {
+  totalReceitas: number
+  totalDespesas: number
+  totalPoupanca: number
+  saldoFinal: number
+  totalTransacoes: number
+  totalMetas: number
+  metasAtingidas: number
+  periodo: string
+  despesasPorCategoria: Array<{ categoria: string; valor: number; percentual: number }>
+  receitasPorCategoria: Array<{ categoria: string; valor: number; percentual: number }>
+  evolucaoMensal: Array<{ mes: string; receitas: number; despesas: number; saldo: number }>
+  metasPoupanca: Array<{ descricao: string; atual: number; objetivo: number; progresso: number }>
+}
 
-// Funções Utilitárias
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
-};
+export default function RelatoriosPage() {
+  const [mounted, setMounted] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [showValues, setShowValues] = useState(true)
+  const [selectedPeriod, setSelectedPeriod] = useState('current_month')
+  const [reportData, setReportData] = useState<ReportData | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-const getDateRange = (period: PeriodFilter) => {
-  const now = new Date();
-  const ranges = {
-    '7d': new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
-    '30d': new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
-    '90d': new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000),
-    '365d': new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000),
-    'all': new Date(2020, 0, 1),
-  };
-  return ranges[period];
-};
+  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
+  const supabase = createClient()
 
-// Componentes Customizados
-const MetricCard = ({ title, value, icon: Icon, variant = "default" }: { title: string, value: string, icon: any, variant?: "default" | "positive" | "negative" }) => {
-    const getVariantClasses = () => {
-        switch (variant) {
-            case "positive": return "text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800/30";
-            case "negative": return "text-red-600 bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-800/30";
-            default: return "text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-800/30";
-        }
-    };
-    return (
-        <Card><CardHeader className="flex flex-row items-center justify-between pb-3"><CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle><div className={`p-2.5 rounded-xl border ${getVariantClasses()}`}><Icon className="h-4 w-4" /></div></CardHeader><CardContent><div className="text-2xl font-bold">{value}</div></CardContent></Card>
-    );
-};
-
-const CustomTooltip = ({ active, payload, label, formatter }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-background/95 backdrop-blur-sm border border-border rounded-xl shadow-xl p-4">
-        <p className="font-semibold text-sm mb-3 text-foreground">{label}</p>
-        {payload.map((entry: any, index: number) => (
-          <div key={index} className="flex items-center justify-between gap-4 mb-2 last:mb-0"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full border border-white/50" style={{ backgroundColor: entry.color }} /><span className="text-sm font-medium text-foreground">{entry.name}:</span></div><span className="text-sm font-bold text-foreground">{formatter ? formatter(entry.value) : formatCurrency(entry.value)}</span></div>
-        ))}
-      </div>
-    );
-  }
-  return null;
-};
-
-const LoadingState = () => (
-    <div className="flex-1 flex items-center justify-center min-h-[400px]"><div className="text-center space-y-4"><div className="relative"><Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" /><div className="absolute inset-0 rounded-full bg-primary/20 animate-pulse" /></div><div className="space-y-2"><p className="text-lg font-semibold">Carregando relatórios...</p><p className="text-sm text-muted-foreground">Processando seus dados financeiros</p></div></div></div>
-);
-
-const EmptyState = () => (
-    <div className="space-y-8"><div className="flex items-center justify-between"><div><h1 className="text-3xl font-bold tracking-tight">Relatórios Financeiros</h1><p className="text-muted-foreground">Análise detalhada das suas finanças</p></div></div><Card className="flex flex-col items-center justify-center min-h-[500px] text-center border-dashed border-2"><div className="space-y-6 max-w-md"><div className="relative"><BarChart3 className="h-20 w-20 text-muted-foreground/50 mx-auto" /><div className="absolute inset-0 bg-gradient-to-t from-muted/20 to-transparent rounded-full blur-xl" /></div><div className="space-y-3"><h3 className="text-xl font-semibold">Nenhum dado disponível</h3><p className="text-muted-foreground leading-relaxed">Adicione algumas transações para começar a visualizar seus relatórios.</p></div><Button size="lg" className="gap-2" asChild><a href="/despesas"><Wallet className="h-5 w-5" />Adicionar Transação</a></Button></div></Card></div>
-);
-
-export default function ReportsPage() {
-  const [supabase] = useState(() => 
-    createBrowserClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  );
-  
-  const [transactions, setTransactions] = useState<TransactionWithCategory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>('30d');
-  const [activeTab, setActiveTab] = useState('overview');
-
-  const fetchTransactions = useCallback(async (currentUserId: string, showRefresh = false) => {
-    if (showRefresh) setIsRefreshing(true);
-    try {
-      const { data, error } = await supabase.from('transactions').select('*, categories(name)').eq('user_id', currentUserId).order('created_at', { ascending: false });
-      if (error) throw error;
-      
-      // CORREÇÃO DE TIPAGEM: Asserção de tipo para garantir a compatibilidade.
-      setTransactions(data as TransactionWithCategory[] || []);
-
-      if (showRefresh) toast.success('Relatórios atualizados!');
-    } catch (error) {
-      console.error('Erro ao buscar transações para relatórios:', error);
-      toast.error('Erro ao carregar relatórios');
-    } finally {
-      if (showRefresh) setIsRefreshing(false);
-    }
-  }, [supabase]);
-
+  // Verificar se está montado
   useEffect(() => {
-    let isMounted = true;
-    const checkUserAndFetch = async () => {
-      if (isMounted) setIsLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && isMounted) await fetchTransactions(user.id);
-      if (isMounted) setIsLoading(false);
-    };
-    checkUserAndFetch();
-    return () => { isMounted = false; };
-  }, [supabase, fetchTransactions]);
+    setMounted(true)
+  }, [])
 
-  const handleRefresh = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) await fetchTransactions(user.id, true);
-  }, [supabase, fetchTransactions]);
-
-  // FUNÇÃO DE IMPRESSÃO ATUALIZADA
-  const handlePrint = () => {
-    if (!reportData) {
-      toast.error("Não há dados para imprimir.");
-      return;
+  // Verificar autenticação
+  useEffect(() => {
+    if (mounted && !authLoading && !user) {
+      router.push('/login')
     }
-    
-    const printPayload = {
-      reportData,
-      periodLabel: PERIOD_OPTIONS.find(p => p.value === selectedPeriod)?.label || 'Período Completo'
-    };
-    
-    sessionStorage.setItem('printData', JSON.stringify(printPayload));
-    window.open('/relatorios/print', '_blank');
-  };
+  }, [user, authLoading, router, mounted])
 
-  const filteredTransactions = useMemo(() => {
-    if (selectedPeriod === 'all') return transactions;
-    const cutoffDate = getDateRange(selectedPeriod);
-    return transactions.filter(t => new Date(t.created_at) >= cutoffDate);
-  }, [transactions, selectedPeriod]);
+  // Carregar dados quando usuário disponível
+  useEffect(() => {
+    if (mounted && user && !authLoading) {
+      loadReportData()
+    }
+  }, [user, authLoading, mounted, selectedPeriod])
 
-  const reportData = useMemo(() => {
-    if (filteredTransactions.length === 0) return null;
-    const data = {
-        monthlyData: {} as { [key: string]: { receitas: number; despesas: number; saldo: number } },
-        categoryData: {} as { [key: string]: number },
-        incomeCategoryData: {} as { [key: string]: number },
-        totalReceitas: 0,
-        totalDespesas: 0,
-    };
-    filteredTransactions.forEach(t => {
-        const date = new Date(t.created_at);
-        const monthKey = date.toLocaleString('pt-BR', { month: 'short', year: '2-digit' });
-        if (!data.monthlyData[monthKey]) data.monthlyData[monthKey] = { receitas: 0, despesas: 0, saldo: 0 };
-        if (t.type === 'income') {
-            data.monthlyData[monthKey].receitas += t.amount;
-            data.totalReceitas += t.amount;
-            const categoryName = t.categories?.name || 'Outras Receitas';
-            data.incomeCategoryData[categoryName] = (data.incomeCategoryData[categoryName] || 0) + t.amount;
-        } else {
-            data.monthlyData[monthKey].despesas += t.amount;
-            data.totalDespesas += t.amount;
-            const categoryName = t.categories?.name || 'Outras Despesas';
-            data.categoryData[categoryName] = (data.categoryData[categoryName] || 0) + t.amount;
-        }
-    });
-    Object.keys(data.monthlyData).forEach(key => { data.monthlyData[key].saldo = data.monthlyData[key].receitas - data.monthlyData[key].despesas; });
+  const getDateRange = () => {
+    const now = new Date()
+    let startDate: Date
+    let endDate: Date
+
+    switch (selectedPeriod) {
+      case 'current_month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        break
+      case 'last_month':
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        endDate = new Date(now.getFullYear(), now.getMonth(), 0)
+        break
+      case 'last_3_months':
+        startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1)
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        break
+      case 'current_year':
+        startDate = new Date(now.getFullYear(), 0, 1)
+        endDate = new Date(now.getFullYear(), 11, 31)
+        break
+      case 'all_time':
+        startDate = new Date(2020, 0, 1)
+        endDate = new Date()
+        break
+      default:
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    }
+
     return {
-        totalReceitas: data.totalReceitas,
-        totalDespesas: data.totalDespesas,
-        saldoFinal: data.totalReceitas - data.totalDespesas,
-        transactionCount: filteredTransactions.length,
-        balanceEvolution: Object.entries(data.monthlyData).map(([name, values]) => ({ name, ...values })).reverse().slice(0, 12),
-        expensesByCategory: Object.entries(data.categoryData).map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value, percentage: data.totalDespesas > 0 ? (value / data.totalDespesas) * 100 : 0 })).sort((a, b) => b.value - a.value).slice(0, 8),
-        incomeByCategory: Object.entries(data.incomeCategoryData).map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value, percentage: data.totalReceitas > 0 ? (value / data.totalReceitas) * 100 : 0 })).sort((a, b) => b.value - a.value).slice(0, 8),
-    };
-  }, [filteredTransactions]);
-  
-  if (isLoading) return <LoadingState />;
-  if (!reportData) return <EmptyState />;
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0]
+    }
+  }
+
+  const loadReportData = async () => {
+    if (!user) return
+
+    setLoading(true)
+    setError(null)
+
+    try {
+      console.log('📊 Carregando dados do relatório...')
+      
+      const { start, end } = getDateRange()
+      console.log('📅 Período:', start, 'até', end)
+
+      // Buscar todas as despesas
+      const { data: despesasData, error: despesasError } = await supabase
+        .from('despesas')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('data', start)
+        .lte('data', end)
+        .order('data', { ascending: false })
+
+      if (despesasError) {
+        console.error('Erro ao buscar despesas:', despesasError)
+      }
+
+      // Buscar todas as receitas
+      const { data: receitasData, error: receitasError } = await supabase
+        .from('receitas')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('data', start)
+        .lte('data', end)
+        .order('data', { ascending: false })
+
+      if (receitasError) {
+        console.error('Erro ao buscar receitas:', receitasError)
+      }
+
+      // Buscar todas as poupanças
+      const { data: poupancaData, error: poupancaError } = await supabase
+        .from('poupanca')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (poupancaError) {
+        console.error('Erro ao buscar poupanças:', poupancaError)
+      }
+
+      // Processar dados
+      const despesas = despesasData || []
+      const receitas = receitasData || []
+      const poupancas = poupancaData || []
+
+      // Calcular totais
+      const totalDespesas = despesas.reduce((sum, item) => sum + Number(item.valor), 0)
+      const totalReceitas = receitas.reduce((sum, item) => sum + Number(item.valor), 0)
+      const totalPoupanca = poupancas.reduce((sum, item) => sum + Number(item.valor_atual || 0), 0)
+      const saldoFinal = totalReceitas - totalDespesas
+
+      // Agrupar despesas por categoria
+      const despesasPorCategoria: { [key: string]: number } = {}
+      despesas.forEach(despesa => {
+        const categoria = despesa.categoria || 'Outros'
+        despesasPorCategoria[categoria] = (despesasPorCategoria[categoria] || 0) + Number(despesa.valor)
+      })
+
+      // Agrupar receitas por categoria
+      const receitasPorCategoria: { [key: string]: number } = {}
+      receitas.forEach(receita => {
+        const categoria = receita.categoria || 'Outros'
+        receitasPorCategoria[categoria] = (receitasPorCategoria[categoria] || 0) + Number(receita.valor)
+      })
+
+      // Criar arrays para gráficos
+      const despesasArray = Object.entries(despesasPorCategoria)
+        .map(([categoria, valor]) => ({
+          categoria,
+          valor,
+          percentual: totalDespesas > 0 ? (valor / totalDespesas) * 100 : 0
+        }))
+        .sort((a, b) => b.valor - a.valor)
+
+      const receitasArray = Object.entries(receitasPorCategoria)
+        .map(([categoria, valor]) => ({
+          categoria,
+          valor,
+          percentual: totalReceitas > 0 ? (valor / totalReceitas) * 100 : 0
+        }))
+        .sort((a, b) => b.valor - a.valor)
+
+      // Evolução mensal
+      const evolucaoMensal: { [key: string]: { receitas: number; despesas: number } } = {}
+      
+      // Processar receitas por mês
+      receitas.forEach(receita => {
+        const mes = new Date(receita.data).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
+        if (!evolucaoMensal[mes]) {
+          evolucaoMensal[mes] = { receitas: 0, despesas: 0 }
+        }
+        evolucaoMensal[mes].receitas += Number(receita.valor)
+      })
+
+      // Processar despesas por mês
+      despesas.forEach(despesa => {
+        const mes = new Date(despesa.data).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
+        if (!evolucaoMensal[mes]) {
+          evolucaoMensal[mes] = { receitas: 0, despesas: 0 }
+        }
+        evolucaoMensal[mes].despesas += Number(despesa.valor)
+      })
+
+      const evolucaoArray = Object.entries(evolucaoMensal)
+        .map(([mes, dados]) => ({
+          mes,
+          receitas: dados.receitas,
+          despesas: dados.despesas,
+          saldo: dados.receitas - dados.despesas
+        }))
+        .sort((a, b) => a.mes.localeCompare(b.mes))
+
+      // Metas de poupança
+      const metasPoupanca = poupancas.map(meta => ({
+        descricao: meta.descricao,
+        atual: Number(meta.valor_atual || 0),
+        objetivo: Number(meta.valor_objetivo || 0),
+        progresso: Number(meta.valor_objetivo || 0) > 0 ? 
+          (Number(meta.valor_atual || 0) / Number(meta.valor_objetivo || 0)) * 100 : 0
+      }))
+
+      const metasAtingidas = metasPoupanca.filter(meta => meta.progresso >= 100).length
+
+      // Definir período
+      const periodoLabels: { [key: string]: string } = {
+        'current_month': 'Mês Atual',
+        'last_month': 'Mês Passado',
+        'last_3_months': 'Últimos 3 Meses',
+        'current_year': 'Ano Atual',
+        'all_time': 'Todo o Período'
+      }
+
+      const report: ReportData = {
+        totalReceitas,
+        totalDespesas,
+        totalPoupanca,
+        saldoFinal,
+        totalTransacoes: despesas.length + receitas.length,
+        totalMetas: poupancas.length,
+        metasAtingidas,
+        periodo: periodoLabels[selectedPeriod] || 'Período Selecionado',
+        despesasPorCategoria: despesasArray,
+        receitasPorCategoria: receitasArray,
+        evolucaoMensal: evolucaoArray,
+        metasPoupanca
+      }
+
+      setReportData(report)
+      console.log('✅ Relatório carregado com sucesso')
+
+    } catch (error) {
+      console.error('❌ Erro ao carregar relatório:', error)
+      setError('Erro ao carregar dados do relatório')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatCurrency = (value: number) => {
+    if (!showValues) return 'R$ ••••••'
+    
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value)
+  }
+
+  const handlePrint = () => {
+    if (!reportData) return
+
+    // Criar dados para impressão
+    const printData = {
+      ...reportData,
+      dataGeracao: new Date().toLocaleString('pt-BR'),
+      usuario: user?.email || 'Usuário'
+    }
+
+    // Salvar dados no localStorage para a página de impressão
+    localStorage.setItem('printReportData', JSON.stringify(printData))
+    
+    // Abrir página de impressão
+    const printWindow = window.open('/relatorios/print', '_blank')
+    if (!printWindow) {
+      alert('Popup bloqueado! Permita popups para imprimir o relatório.')
+    }
+  }
+
+  const handleRefresh = () => {
+    loadReportData()
+  }
+
+  const exportToPDF = () => {
+    if (!reportData) return
+    
+    // Implementar exportação para PDF (futuramente)
+    alert('Funcionalidade de exportação PDF em desenvolvimento')
+  }
+
+  // Loading inicial
+  if (!mounted || authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Carregando relatórios...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return null
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Processando dados financeiros...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-medium mb-2">Erro ao carregar relatórios</h3>
+          <p className="text-muted-foreground mb-4">{error}</p>
+          <button
+            onClick={handleRefresh}
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-md"
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!reportData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <BarChart3 className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
+          <h3 className="text-lg font-medium mb-2">Nenhum dado encontrado</h3>
+          <p className="text-muted-foreground mb-4">
+            Não há transações para o período selecionado
+          </p>
+          <button
+            onClick={() => router.push('/transacoes')}
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-md"
+          >
+            Adicionar Transações
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-8">
-      {/* Cabeçalho */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Relatórios Financeiros</h1>
-          <p className="text-muted-foreground">Análise detalhada das suas finanças • {reportData.transactionCount} transações</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Relatórios Financeiros</h1>
+          <p className="text-muted-foreground">
+            Análise completa das suas finanças • {reportData.periodo}
+          </p>
         </div>
+        
         <div className="flex items-center gap-3">
-          <Select value={selectedPeriod} onValueChange={(value: PeriodFilter) => setSelectedPeriod(value)}>
-            <SelectTrigger className="w-[180px]"><Clock className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
-            <SelectContent>{PERIOD_OPTIONS.map((option) => (<SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>))}</SelectContent>
-          </Select>
-          <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing} className="gap-2"><RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />Atualizar</Button>
-          <Button variant="outline" onClick={handlePrint} className="gap-2"><Printer className="h-4 w-4" />Imprimir Relatório</Button>
+          {/* Filtro de período */}
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="current_month">Mês Atual</option>
+              <option value="last_month">Mês Passado</option>
+              <option value="last_3_months">Últimos 3 Meses</option>
+              <option value="current_year">Ano Atual</option>
+              <option value="all_time">Todo o Período</option>
+            </select>
+          </div>
+
+          <button
+            onClick={() => setShowValues(!showValues)}
+            className="p-3 rounded-xl bg-card hover:bg-accent border transition-colors"
+            title={showValues ? 'Ocultar valores' : 'Mostrar valores'}
+          >
+            {showValues ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+          </button>
+          
+          <button
+            onClick={handleRefresh}
+            className="p-3 rounded-xl bg-card hover:bg-accent border transition-colors"
+            title="Atualizar dados"
+          >
+            <RefreshCw className="h-5 w-5" />
+          </button>
+
+          <button
+            onClick={exportToPDF}
+            className="p-3 rounded-xl bg-card hover:bg-accent border transition-colors"
+            title="Exportar PDF"
+          >
+            <Download className="h-5 w-5" />
+          </button>
+          
+          <button
+            onClick={handlePrint}
+            className="bg-primary text-primary-foreground px-6 py-3 rounded-xl font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
+          >
+            <Printer className="h-5 w-5" />
+            Imprimir Relatório
+          </button>
         </div>
       </div>
 
-      {/* Cards de Resumo */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <MetricCard title="Total de Receitas" value={formatCurrency(reportData.totalReceitas)} icon={TrendingUpIcon} variant="positive" />
-        <MetricCard title="Total de Despesas" value={formatCurrency(reportData.totalDespesas)} icon={TrendingDownIcon} variant="negative" />
-        <MetricCard title="Saldo Final" value={formatCurrency(reportData.saldoFinal)} icon={Wallet} variant={reportData.saldoFinal >= 0 ? "positive" : "negative"} />
-        <MetricCard title="Transações" value={reportData.transactionCount.toString()} icon={Activity} />
+      {/* Cards de resumo */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-card rounded-xl p-6 border">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-xl bg-emerald-500/10">
+              <TrendingUp className="h-6 w-6 text-emerald-500" />
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground mb-1">Total Receitas</p>
+              <p className="text-2xl font-bold text-emerald-500">
+                {formatCurrency(reportData.totalReceitas)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-xl p-6 border">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-xl bg-red-500/10">
+              <TrendingDown className="h-6 w-6 text-red-500" />
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground mb-1">Total Despesas</p>
+              <p className="text-2xl font-bold text-red-500">
+                {formatCurrency(reportData.totalDespesas)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-xl p-6 border">
+          <div className="flex items-center justify-between mb-4">
+            <div className={`p-3 rounded-xl ${reportData.saldoFinal >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+              <Wallet className={`h-6 w-6 ${reportData.saldoFinal >= 0 ? 'text-emerald-500' : 'text-red-500'}`} />
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground mb-1">Saldo Final</p>
+              <p className={`text-2xl font-bold ${reportData.saldoFinal >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                {formatCurrency(reportData.saldoFinal)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-xl p-6 border">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-xl bg-blue-500/10">
+              <PiggyBank className="h-6 w-6 text-blue-500" />
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground mb-1">Poupança Total</p>
+              <p className="text-2xl font-bold text-blue-500">
+                {formatCurrency(reportData.totalPoupanca)}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Gráficos em Abas */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="overview" className="gap-2"><BarChart3 className="h-4 w-4" />Visão Geral</TabsTrigger>
-          <TabsTrigger value="categories" className="gap-2"><PieChartIcon className="h-4 w-4" />Categorias</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview">
-          <Card><CardHeader><CardTitle>Evolução Mensal</CardTitle><CardDescription>Receitas vs. Despesas</CardDescription></CardHeader><CardContent className="h-[400px] p-6"><ResponsiveContainer width="100%" height="100%"><BarChart data={reportData.balanceEvolution}><XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} /><YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={value => `${(Number(value) / 1000).toFixed(0)}k`} /><Tooltip content={<CustomTooltip />} /><Legend /><Bar dataKey="receitas" name="Receitas" fill="#22c55e" /><Bar dataKey="despesas" name="Despesas" fill="#ef4444" /></BarChart></ResponsiveContainer></CardContent></Card>
-        </TabsContent>
-
-        <TabsContent value="categories">
-          <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader><CardTitle>Despesas por Categoria</CardTitle></CardHeader>
-              <CardContent className="h-[400px] p-6"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={reportData.expensesByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={120} labelLine={false} label={({ name, percentage }) => `${name} ${percentage.toFixed(0)}%`}>{reportData.expensesByCategory.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Pie><Tooltip content={<CustomTooltip />} /></PieChart></ResponsiveContainer></CardContent>
-            </Card>
-            <Card>
-              <CardHeader><CardTitle>Receitas por Categoria</CardTitle></CardHeader>
-              <CardContent className="h-[400px] p-6">{reportData.incomeByCategory.length > 0 ? (<ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={reportData.incomeByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={120} labelLine={false} label={({ name, percentage }) => `${name} ${percentage.toFixed(0)}%`}>{reportData.incomeByCategory.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Pie><Tooltip content={<CustomTooltip />} /></PieChart></ResponsiveContainer>) : (<div className="flex items-center justify-center h-full text-muted-foreground"><div className="text-center space-y-3"><DollarSign className="h-16 w-16 mx-auto opacity-50" /><p>Nenhuma receita encontrada</p></div></div>)}</CardContent>
-            </Card>
+      {/* Estatísticas detalhadas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-card rounded-xl p-6 border">
+          <h3 className="text-lg font-semibold mb-4">Transações</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Total de transações:</span>
+              <span className="font-medium">{reportData.totalTransacoes}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Período:</span>
+              <span className="font-medium">{reportData.periodo}</span>
+            </div>
           </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+
+        <div className="bg-card rounded-xl p-6 border">
+          <h3 className="text-lg font-semibold mb-4">Metas de Poupança</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Total de metas:</span>
+              <span className="font-medium">{reportData.totalMetas}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Metas atingidas:</span>
+              <span className="font-medium text-emerald-600">{reportData.metasAtingidas}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-xl p-6 border">
+          <h3 className="text-lg font-semibold mb-4">Análise</h3>
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Taxa de economia:</span>
+              <span className={`font-medium ${reportData.saldoFinal >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                {reportData.totalReceitas > 0 ? 
+                  `${((reportData.saldoFinal / reportData.totalReceitas) * 100).toFixed(1)}%` : 
+                  '0%'
+                }
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Maior categoria:</span>
+              <span className="font-medium">
+                {reportData.despesasPorCategoria[0]?.categoria || 'N/A'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Despesas por categoria */}
+      {reportData.despesasPorCategoria.length > 0 && (
+        <div className="bg-card rounded-xl border">
+          <div className="p-6 border-b">
+            <h3 className="text-lg font-semibold">Despesas por Categoria</h3>
+          </div>
+          <div className="p-6">
+            <div className="space-y-4">
+              {reportData.despesasPorCategoria.slice(0, 8).map((categoria, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 rounded-full bg-red-500 opacity-70"></div>
+                    <span className="font-medium">{categoria.categoria}</span>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold">{formatCurrency(categoria.valor)}</div>
+                    <div className="text-sm text-muted-foreground">{categoria.percentual.toFixed(1)}%</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receitas por categoria */}
+      {reportData.receitasPorCategoria.length > 0 && (
+        <div className="bg-card rounded-xl border">
+          <div className="p-6 border-b">
+            <h3 className="text-lg font-semibold">Receitas por Categoria</h3>
+          </div>
+          <div className="p-6">
+            <div className="space-y-4">
+              {reportData.receitasPorCategoria.slice(0, 8).map((categoria, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 rounded-full bg-emerald-500 opacity-70"></div>
+                    <span className="font-medium">{categoria.categoria}</span>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold">{formatCurrency(categoria.valor)}</div>
+                    <div className="text-sm text-muted-foreground">{categoria.percentual.toFixed(1)}%</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Evolução mensal */}
+      {reportData.evolucaoMensal.length > 0 && (
+        <div className="bg-card rounded-xl border">
+          <div className="p-6 border-b">
+            <h3 className="text-lg font-semibold">Evolução Mensal</h3>
+          </div>
+          <div className="p-6">
+            <div className="space-y-4">
+              {reportData.evolucaoMensal.map((mes, index) => (
+                <div key={index} className="grid grid-cols-4 gap-4 py-3 border-b border-border/50 last:border-0">
+                  <div className="font-medium">{mes.mes}</div>
+                  <div className="text-emerald-600">{formatCurrency(mes.receitas)}</div>
+                  <div className="text-red-600">{formatCurrency(mes.despesas)}</div>
+                  <div className={`font-medium ${mes.saldo >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {formatCurrency(mes.saldo)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Metas de poupança */}
+      {reportData.metasPoupanca.length > 0 && (
+        <div className="bg-card rounded-xl border">
+          <div className="p-6 border-b">
+            <h3 className="text-lg font-semibold">Progresso das Metas de Poupança</h3>
+          </div>
+          <div className="p-6">
+            <div className="space-y-4">
+              {reportData.metasPoupanca.map((meta, index) => (
+                <div key={index} className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">{meta.descricao}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {meta.progresso.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div 
+                      className="h-2 rounded-full bg-blue-500 transition-all duration-300"
+                      style={{ width: `${Math.min(meta.progresso, 100)}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>{formatCurrency(meta.atual)}</span>
+                    <span>{formatCurrency(meta.objetivo)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
+  )
 }
