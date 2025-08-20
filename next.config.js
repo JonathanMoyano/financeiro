@@ -2,7 +2,6 @@
 const nextConfig = {
   // --- Configurações Essenciais e de Performance ---
   reactStrictMode: true,
-  swcMinify: true,
   poweredByHeader: false, // Melhora a segurança
   compress: true, // Habilita compressão Gzip
 
