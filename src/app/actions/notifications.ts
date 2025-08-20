@@ -8,7 +8,8 @@ import { subDays, formatISO } from 'date-fns';
  * @returns Uma lista de transações a vencer.
  */
 export async function getUpcomingBills() {
-  const supabase = createClient();
+  // CORREÇÃO: Aguarda a criação do cliente Supabase
+  const supabase = await createClient();
 
   // Pega o usuário atual da sessão
   const { data: { user } } = await supabase.auth.getUser();

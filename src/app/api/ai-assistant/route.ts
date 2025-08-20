@@ -7,7 +7,8 @@ export async function POST(req: Request) {
   console.log("API /api/ai-assistant foi chamada."); // Log de início
 
   try {
-    const supabase = createClient();
+    // CORREÇÃO: Aguarda a criação do cliente Supabase
+    const supabase = await createClient();
 
     // 1. Obter o utilizador autenticado
     const { data, error: authError } = await supabase.auth.getUser();

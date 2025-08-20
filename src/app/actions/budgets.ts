@@ -20,8 +20,8 @@ const updateBudgetSchema = z.object({
 
 // --- FUNÇÃO DE CRIAR (Corrigida) ---
 export async function createBudget(formData: FormData) {
-  // CORREÇÃO: Usa a nova função para criar o cliente Supabase.
-  const supabase = createClient();
+  // CORREÇÃO: Aguarda a criação do cliente Supabase e obtém o usuário
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, message: "Utilizador não autenticado." };
 
@@ -57,8 +57,8 @@ export async function createBudget(formData: FormData) {
 
 // --- FUNÇÃO DE ATUALIZAR (Corrigida) ---
 export async function updateBudget(formData: FormData) {
-  // CORREÇÃO: Usa a nova função para criar o cliente Supabase.
-  const supabase = createClient();
+  // CORREÇÃO: Aguarda a criação do cliente Supabase e obtém o usuário
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, message: "Utilizador não autenticado." };
 
@@ -87,8 +87,8 @@ export async function updateBudget(formData: FormData) {
 
 // --- FUNÇÃO DE EXCLUIR (Corrigida) ---
 export async function deleteBudget(budgetId: string) {
-  // CORREÇÃO: Usa a nova função para criar o cliente Supabase.
-  const supabase = createClient();
+  // CORREÇÃO: Aguarda a criação do cliente Supabase e obtém o usuário
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, message: "Utilizador não autenticado." };
 

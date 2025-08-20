@@ -27,7 +27,8 @@ const updatePasswordSchema = z.object({
 
 export async function updateProfile(prevState: any, formData: FormData) {
   // 1. Cria o cliente Supabase para Server Actions
-  const supabase = createClient();
+  // CORREÇÃO: Aguarda a criação do cliente Supabase
+  const supabase = await createClient();
   
   // 2. Obtém a sessão do usuário logado
   const { data: { user } } = await supabase.auth.getUser();
@@ -101,7 +102,8 @@ export async function updateProfile(prevState: any, formData: FormData) {
 }
 
 export async function updatePassword(prevState: any, formData: FormData) {
-    const supabase = createClient();
+    // CORREÇÃO: Aguarda a criação do cliente Supabase
+    const supabase = await createClient();
     
     const validatedFields = updatePasswordSchema.safeParse({
         password: formData.get("password"),

@@ -14,10 +14,11 @@ import { EditTransactionForm } from "@/components/features/transactions/edit-tra
 // src/components/features/transactions/edit-transaction-form.tsx
 
 export const TransactionSheet = ({ categories }: { categories: { id: string, name: string }[] }) => {
-  const { isOpen, onClose, id } = useOpenTransaction();
+  // CORREÇÃO: Usar as propriedades corretas do store
+  const { isOpen, editingId, close } = useOpenTransaction();
 
   return (
-    <Sheet open={isOpen} onOpenChange={onClose}>
+    <Sheet open={isOpen} onOpenChange={close}>
       <SheetContent className="space-y-4">
         <SheetHeader>
           <SheetTitle>Editar Transação</SheetTitle>
@@ -26,13 +27,15 @@ export const TransactionSheet = ({ categories }: { categories: { id: string, nam
           </SheetDescription>
         </SheetHeader>
         {/* O formulário de edição precisa do ID da transação para saber qual item carregar,
-          das categorias para o seletor, e da função onClose para fechar o painel.
+          das categorias para o seletor, e da função close para fechar o painel.
         */}
-        <EditTransactionForm
-          transactionId={id}
-          categories={categories}
-          onClose={onClose}
-        />
+        {editingId && (
+          <EditTransactionForm
+            transactionId={editingId}
+            categories={categories}
+            onClose={close}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );
