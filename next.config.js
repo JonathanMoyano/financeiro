@@ -9,17 +9,6 @@ const nextConfig = {
   output: process.env.BUILD_MODE === "mobile" ? "export" : undefined,
   trailingSlash: true, // Importante para o Capacitor
 
-  // --- Server Actions (só para builds web) ---
-  experimental: {
-    // Server Actions são desabilitadas automaticamente com output: 'export'
-    serverActions: process.env.BUILD_MODE !== "mobile",
-    // Para resolver problemas com Supabase e Edge Runtime
-    serverComponentsExternalPackages: [
-      "@supabase/supabase-js",
-      "@supabase/ssr",
-    ],
-  },
-
   // --- Otimização de Imagens ---
   images: {
     formats: ["image/webp", "image/avif"],
@@ -29,10 +18,6 @@ const nextConfig = {
     // Desabilita otimização para mobile build
     unoptimized: process.env.BUILD_MODE === "mobile",
   },
-
-  // --- REMOVIDO: serverExternalPackages não é reconhecido no Next.js 14.2.3 ---
-  // Esta opção foi adicionada em versões mais recentes
-  // serverExternalPackages: ["@supabase/supabase-js", "@supabase/ssr"],
 
   // --- Headers de Segurança e Performance (só para builds web) ---
   async headers() {
@@ -80,9 +65,6 @@ const nextConfig = {
           }
         : false,
   },
-
-  // --- Configurações Experimentais (se necessário) ---
-  // Movido para cima junto com a configuração output
 
   // --- Otimizações do Webpack ---
   webpack: (config, { dev, isServer }) => {
@@ -139,6 +121,8 @@ const nextConfig = {
   },
 
   // --- Configurações de Transpilação ---
+  // A opção 'transpilePackages' é a correta para o Supabase.
+  // O conflito com 'serverComponentsExternalPackages' foi removido.
   transpilePackages: [
     "@supabase/supabase-js",
     "@supabase/realtime-js",
