@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useTransition } from "react"; // Importa useTransition
+import { useState, useEffect, useRef } from "react";
 import { createBrowserClient } from "@supabase/ssr";
 import { Database } from "@/lib/database.types";
-import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,8 +28,14 @@ import {
   EyeOff,
   Shield,
 } from "lucide-react";
-import { updateProfile, updatePassword } from "@/app/actions/profile";
 import { toast } from "sonner";
+
+// Tipos para os estados
+interface FormState {
+  message: string;
+  errors: Record<string, string[]>;
+  success: boolean;
+}
 
 function SubmitButton({
   children,
@@ -64,17 +69,23 @@ function SubmitButton({
 
 function ProfileSection({
   profileState,
-  profileFormAction,
+  onSubmit,
   email,
   initialFullName,
   isPending,
 }: {
-  profileState: any;
-  profileFormAction: any;
+  profileState: FormState;
+  onSubmit: (formData: FormData) => Promise<void>;
   email: string;
   initialFullName: string;
   isPending: boolean;
 }) {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    await onSubmit(formData);
+  };
+
   return (
     <div className="bg-card border rounded-lg shadow-sm p-6">
       <div className="flex items-center gap-3 mb-6">
@@ -89,7 +100,7 @@ function ProfileSection({
         </div>
       </div>
 
-      <form action={profileFormAction} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6">
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="email" className="flex items-center gap-2">
@@ -167,12 +178,12 @@ function ProfileSection({
 
 function PasswordSection({
   passwordState,
-  passwordFormAction,
+  onSubmit,
   passwordFormRef,
   isPending,
 }: {
-  passwordState: any;
-  passwordFormAction: any;
+  passwordState: FormState;
+  onSubmit: (formData: FormData) => Promise<void>;
   passwordFormRef: React.RefObject<HTMLFormElement>;
   isPending: boolean;
 }) {
@@ -209,6 +220,12 @@ function PasswordSection({
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    await onSubmit(formData);
+  };
+
   return (
     <div className="bg-card border rounded-lg shadow-sm p-6">
       <div className="flex items-center gap-3 mb-6">
@@ -223,11 +240,7 @@ function PasswordSection({
         </div>
       </div>
 
-      <form
-        ref={passwordFormRef}
-        action={passwordFormAction}
-        className="space-y-6"
-      >
+      <form ref={passwordFormRef} onSubmit={handleSubmit} className="space-y-6">
         <div className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="password">Nova Senha</Label>
@@ -406,11 +419,7 @@ function PasswordSection({
                   onClick={() => {
                     if (passwordFormRef.current) {
                       const formData = new FormData(passwordFormRef.current);
-                      const submitEvent = new Event("submit", {
-                        bubbles: true,
-                        cancelable: true,
-                      });
-                      passwordFormRef.current.dispatchEvent(submitEvent);
+                      onSubmit(formData);
                     }
                   }}
                   disabled={isPending}
@@ -442,24 +451,118 @@ export default function ProfilePage() {
   const [initialFullName, setInitialFullName] = useState("");
   const passwordFormRef = useRef<HTMLFormElement>(null);
 
-  // CORREÇÃO: Usando useActionState em vez de useFormState
-  const [profileState, profileFormAction, profileIsPending] = useActionState(
-    updateProfile,
-    {
-      message: "",
-      errors: {},
-      success: false,
-    }
-  );
+  // Estados para controlar os forms
+  const [profileState, setProfileState] = useState<FormState>({
+    message: "",
+    errors: {},
+    success: false,
+  });
 
-  const [passwordState, passwordFormAction, passwordIsPending] = useActionState(
-    updatePassword,
-    {
-      message: "",
-      errors: {},
-      success: false,
+  const [passwordState, setPasswordState] = useState<FormState>({
+    message: "",
+    errors: {},
+    success: false,
+  });
+
+  const [profileIsPending, setProfileIsPending] = useState(false);
+  const [passwordIsPending, setPasswordIsPending] = useState(false);
+
+  // Funções para lidar com os submits
+  const handleProfileSubmit = async (formData: FormData) => {
+    setProfileIsPending(true);
+    try {
+      // Aqui você precisa implementar a lógica de updateProfile
+      // ou fazer a chamada direta para o Supabase
+      const fullName = formData.get("fullName") as string;
+
+      if (!fullName || fullName.trim().length < 2) {
+        setProfileState({
+          message: "Nome deve ter pelo menos 2 caracteres",
+          errors: { fullName: ["Nome deve ter pelo menos 2 caracteres"] },
+          success: false,
+        });
+        return;
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error("Usuário não encontrado");
+      }
+
+      const { error } = await supabase.from("profiles").upsert({
+        id: user.id,
+        full_name: fullName.trim(),
+        updated_at: new Date().toISOString(),
+      });
+
+      if (error) throw error;
+
+      setProfileState({
+        message: "Perfil atualizado com sucesso!",
+        errors: {},
+        success: true,
+      });
+    } catch (error: any) {
+      setProfileState({
+        message: error.message || "Erro ao atualizar perfil",
+        errors: {},
+        success: false,
+      });
+    } finally {
+      setProfileIsPending(false);
     }
-  );
+  };
+
+  const handlePasswordSubmit = async (formData: FormData) => {
+    setPasswordIsPending(true);
+    try {
+      const password = formData.get("password") as string;
+      const confirmPassword = formData.get("confirmPassword") as string;
+
+      if (!password || password.length < 6) {
+        setPasswordState({
+          message: "Senha deve ter pelo menos 6 caracteres",
+          errors: { password: ["Senha deve ter pelo menos 6 caracteres"] },
+          success: false,
+        });
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setPasswordState({
+          message: "As senhas não coincidem",
+          errors: { confirmPassword: ["As senhas não coincidem"] },
+          success: false,
+        });
+        return;
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        password: password,
+      });
+
+      if (error) throw error;
+
+      setPasswordState({
+        message: "Senha alterada com sucesso!",
+        errors: {},
+        success: true,
+      });
+
+      passwordFormRef.current?.reset();
+    } catch (error: any) {
+      setPasswordState({
+        message: error.message || "Erro ao alterar senha",
+        errors: {},
+        success: false,
+      });
+    } finally {
+      setPasswordIsPending(false);
+    }
+  };
 
   useEffect(() => {
     const getUserAndProfile = async () => {
@@ -508,7 +611,6 @@ export default function ProfilePage() {
     if (!passwordState?.message) return;
     if (passwordState.success) {
       toast.success(passwordState.message);
-      passwordFormRef.current?.reset();
     } else {
       toast.error(passwordState.message);
     }
@@ -529,7 +631,7 @@ export default function ProfilePage() {
     <div className="space-y-8 max-w-4xl mx-auto">
       <ProfileSection
         profileState={profileState}
-        profileFormAction={profileFormAction}
+        onSubmit={handleProfileSubmit}
         email={email}
         initialFullName={initialFullName}
         isPending={profileIsPending}
@@ -537,7 +639,7 @@ export default function ProfilePage() {
       <div className="border-t border-border" />
       <PasswordSection
         passwordState={passwordState}
-        passwordFormAction={passwordFormAction}
+        onSubmit={handlePasswordSubmit}
         passwordFormRef={passwordFormRef}
         isPending={passwordIsPending}
       />

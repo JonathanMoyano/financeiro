@@ -9,17 +9,22 @@ import { z } from "zod";
 // =================================================================
 
 const updateProfileSchema = z.object({
-  fullName: z.string().min(3, { message: "O nome deve ter pelo menos 3 caracteres." }),
+  fullName: z
+    .string()
+    .min(3, { message: "O nome deve ter pelo menos 3 caracteres." }),
 });
 
-const updatePasswordSchema = z.object({
-  password: z.string().min(8, { message: "A senha deve ter no mínimo 8 caracteres." }),
-  confirmPassword: z.string(),
-}).refine(data => data.password === data.confirmPassword, {
-  message: "As senhas não coincidem.",
-  path: ["confirmPassword"],
-});
-
+const updatePasswordSchema = z
+  .object({
+    password: z
+      .string()
+      .min(8, { message: "A senha deve ter no mínimo 8 caracteres." }),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "As senhas não coincidem.",
+    path: ["confirmPassword"],
+  });
 
 // =================================================================
 // SERVER ACTIONS
@@ -29,14 +34,16 @@ export async function updateProfile(prevState: any, formData: FormData) {
   // 1. Cria o cliente Supabase para Server Actions
   // CORREÇÃO: Aguarda a criação do cliente Supabase
   const supabase = await createClient();
-  
+
   // 2. Obtém a sessão do usuário logado
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
-    return { 
-      success: false, 
-      message: "Usuário não autenticado. Por favor, faça login novamente." 
+    return {
+      success: false,
+      message: "Usuário não autenticado. Por favor, faça login novamente.",
     };
   }
   console.log(`Iniciando atualização de perfil para o usuário: ${user.id}`);
@@ -47,7 +54,10 @@ export async function updateProfile(prevState: any, formData: FormData) {
   });
 
   if (!validatedFields.success) {
-    console.error("❌ Erro de validação:", validatedFields.error.flatten().fieldErrors);
+    console.error(
+      "❌ Erro de validação:",
+      validatedFields.error.flatten().fieldErrors
+    );
     return {
       success: false,
       message: "Dados inválidos. Por favor, corrija os erros abaixo.",
@@ -61,10 +71,10 @@ export async function updateProfile(prevState: any, formData: FormData) {
   // Adicionamos um log mais detalhado e separamos a captura de dados e erros.
   const { data: updatedProfile, error: profileError } = await supabase
     .from("profiles")
-    .upsert({ 
+    .upsert({
       id: user.id, // 'id' é essencial para o upsert saber qual linha criar/atualizar
-      full_name: fullName, 
-      updated_at: new Date().toISOString() 
+      full_name: fullName,
+      updated_at: new Date().toISOString(),
     })
     .select() // Retorna os dados que foram atualizados/inseridos
     .single();
@@ -77,59 +87,65 @@ export async function updateProfile(prevState: any, formData: FormData) {
       message: `Erro no banco de dados: ${profileError.message}. Verifique as políticas de segurança (RLS) da tabela 'profiles'.`,
     };
   }
-  
-  console.log("✅ Perfil atualizado com sucesso na tabela 'profiles':", updatedProfile);
+
+  console.log(
+    "✅ Perfil atualizado com sucesso na tabela 'profiles':",
+    updatedProfile
+  );
 
   // Sincroniza o nome nos metadados do usuário na tabela 'auth.users'
   const { error: authUserError } = await supabase.auth.updateUser({
     data: {
       full_name: fullName,
-    }
+    },
   });
 
   if (authUserError) {
-    console.warn(`Aviso: O perfil foi atualizado, mas falhou ao sincronizar com auth.users: ${authUserError.message}`);
+    console.warn(
+      `Aviso: O perfil foi atualizado, mas falhou ao sincronizar com auth.users: ${authUserError.message}`
+    );
   } else {
     console.log("✅ Metadados do usuário sincronizados em 'auth.users'.");
   }
 
   // Revalida o cache da página e retorna sucesso
   revalidatePath("/configuracoes/perfil");
-  return { 
-    success: true, 
-    message: "Perfil atualizado com sucesso!" 
+  return {
+    success: true,
+    message: "Perfil atualizado com sucesso!",
   };
 }
 
 export async function updatePassword(prevState: any, formData: FormData) {
-    // CORREÇÃO: Aguarda a criação do cliente Supabase
-    const supabase = await createClient();
-    
-    const validatedFields = updatePasswordSchema.safeParse({
-        password: formData.get("password"),
-        confirmPassword: formData.get("confirmPassword"),
-    });
+  // CORREÇÃO: Aguarda a criação do cliente Supabase
+  const supabase = await createClient();
 
-    if (!validatedFields.success) {
-        return {
-            success: false,
-            message: "Dados inválidos.",
-            errors: validatedFields.error.flatten().fieldErrors,
-        };
-    }
+  const validatedFields = updatePasswordSchema.safeParse({
+    password: formData.get("password"),
+    confirmPassword: formData.get("confirmPassword"),
+  });
 
-    const { password } = validatedFields.data;
-    const { error } = await supabase.auth.updateUser({ password });
-
-    if (error) {
-        return {
-            success: false,
-            message: `Erro ao atualizar a senha: ${error.message}`,
-        };
-    }
-
-    return { 
-      success: true, 
-      message: "Senha atualizada com sucesso! Você pode ser desconectado de outros dispositivos." 
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      message: "Dados inválidos.",
+      errors: validatedFields.error.flatten().fieldErrors,
     };
+  }
+
+  const { password } = validatedFields.data;
+  const { error } = await supabase.auth.updateUser({ password });
+
+  if (error) {
+    return {
+      success: false,
+      message: `Erro ao atualizar a senha: ${error.message}`,
+    };
+  }
+
+  return {
+    success: true,
+    message:
+      "Senha atualizada com sucesso! Você pode ser desconectado de outros dispositivos.",
+  };
 }
