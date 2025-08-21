@@ -1,96 +1,160 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   TrendingUp,
   TrendingDown,
   Wallet,
   PiggyBank,
-  Printer,
+  Download,
   RefreshCw,
   Loader2,
   Eye,
   EyeOff,
-  Filter,
-  Download,
-  AlertCircle,
+  Calendar,
   ChevronDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  Target,
+  Activity,
+  FileText,
+  Share2,
+  Info,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
-// Hook para detectar dispositivo móvel
-const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const checkDevice = () => {
-      // Verifica largura da tela e user agent
-      const width = window.innerWidth;
-      const userAgent = navigator.userAgent.toLowerCase();
-      const mobileKeywords =
-        /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/;
-
-      setIsMobile(width < 768 || mobileKeywords.test(userAgent));
-    };
-
-    checkDevice();
-    window.addEventListener("resize", checkDevice);
-
-    return () => window.removeEventListener("resize", checkDevice);
-  }, []);
-
-  return isMobile;
-};
+// Tipos
+interface Transaction {
+  id: string;
+  descricao: string;
+  valor: number;
+  categoria: string;
+  data: string;
+  tipo: 'receita' | 'despesa';
+  forma_pagamento?: string;
+  recorrente?: boolean;
+}
 
 interface CategoryData {
   categoria: string;
   valor: number;
   percentual: number;
+  quantidade: number;
+  media: number;
 }
 
-interface MonthlyEvolution {
+interface MonthlyData {
   mes: string;
+  mesNumero: number;
+  ano: number;
   receitas: number;
   despesas: number;
   saldo: number;
+  quantidadeTransacoes: number;
 }
 
 interface SavingsGoal {
+  id: string;
   descricao: string;
-  atual: number;
-  objetivo: number;
+  valor_atual: number;
+  valor_objetivo: number;
   progresso: number;
+  prazo?: string;
+  categoria?: string;
 }
 
-interface ReportData {
+interface ReportSummary {
   totalReceitas: number;
   totalDespesas: number;
   totalPoupanca: number;
-  saldoFinal: number;
+  saldoAtual: number;
+  economiaPercentual: number;
+  mediaDiaria: number;
+  projecaoMensal: number;
   totalTransacoes: number;
-  totalMetas: number;
-  metasAtingidas: number;
-  periodo: string;
-  despesasPorCategoria: CategoryData[];
-  receitasPorCategoria: CategoryData[];
-  evolucaoMensal: MonthlyEvolution[];
-  metasPoupanca: SavingsGoal[];
+  categoriasPrincipais: {
+    receita: string;
+    despesa: string;
+  };
 }
 
+interface ReportFilters {
+  periodo: string;
+  categorias: string[];
+  tipoTransacao: 'todas' | 'receitas' | 'despesas';
+  customDateRange?: {
+    start: string;
+    end: string;
+  };
+}
+
+// Componente de Cartão Métrica
+const MetricCard = ({ 
+  icon: Icon, 
+  label, 
+  value, 
+  trend, 
+  color = "primary",
+  showValue = true 
+}: {
+  icon: any;
+  label: string;
+  value: string | number;
+  trend?: { value: number; isPositive: boolean };
+  color?: string;
+  showValue?: boolean;
+}) => {
+  const colorClasses = {
+    primary: "bg-primary/10 text-primary",
+    success: "bg-emerald-500/10 text-emerald-500",
+    danger: "bg-red-500/10 text-red-500",
+    info: "bg-blue-500/10 text-blue-500",
+    warning: "bg-amber-500/10 text-amber-500",
+  };
+
+  return (
+    <div className="bg-card rounded-xl p-4 border border-border/50 hover:border-border transition-all">
+      <div className="flex items-start justify-between mb-2">
+        <div className={`p-2 rounded-lg ${colorClasses[color as keyof typeof colorClasses]}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+        {trend && (
+          <div className={`flex items-center gap-1 text-xs ${trend.isPositive ? 'text-emerald-500' : 'text-red-500'}`}>
+            {trend.isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+            <span>{Math.abs(trend.value).toFixed(1)}%</span>
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      <p className="text-lg font-semibold">
+        {showValue ? value : "••••••"}
+      </p>
+    </div>
+  );
+};
+
+// Componente Principal
 export default function RelatoriosPage() {
   const [loading, setLoading] = useState(true);
   const [showValues, setShowValues] = useState(true);
-  const [selectedPeriod, setSelectedPeriod] = useState("current_month");
-  const [reportData, setReportData] = useState<ReportData | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'resumo' | 'detalhes' | 'analise'>('resumo');
+  
+  const [filters, setFilters] = useState<ReportFilters>({
+    periodo: 'mes_atual',
+    categorias: [],
+    tipoTransacao: 'todas',
+  });
+
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
+  const [summary, setSummary] = useState<ReportSummary | null>(null);
 
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const supabase = createClient();
-  const isMobile = useIsMobile();
 
   // Verificar autenticação
   useEffect(() => {
@@ -104,348 +168,345 @@ export default function RelatoriosPage() {
     if (user && !authLoading) {
       loadReportData();
     }
-  }, [user, authLoading, selectedPeriod]);
+  }, [user, authLoading, filters]);
 
+  // Função para obter range de datas
   const getDateRange = () => {
     const now = new Date();
     let startDate: Date;
-    let endDate: Date;
+    let endDate: Date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
-    switch (selectedPeriod) {
-      case "current_month":
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(
-          now.getFullYear(),
-          now.getMonth() + 1,
-          0,
-          23,
-          59,
-          59
-        );
+    switch (filters.periodo) {
+      case 'hoje':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         break;
-      case "last_month":
+      case 'semana':
+        startDate = new Date(now);
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case 'mes_atual':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      case 'mes_passado':
         startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
         break;
-      case "last_3_months":
+      case '3_meses':
         startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-        endDate = new Date(
-          now.getFullYear(),
-          now.getMonth() + 1,
-          0,
-          23,
-          59,
-          59
-        );
         break;
-      case "current_year":
+      case '6_meses':
+        startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+        break;
+      case 'ano':
         startDate = new Date(now.getFullYear(), 0, 1);
-        endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+        break;
+      case 'custom':
+        if (filters.customDateRange) {
+          startDate = new Date(filters.customDateRange.start);
+          endDate = new Date(filters.customDateRange.end);
+        } else {
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        }
         break;
       default:
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(
-          now.getFullYear(),
-          now.getMonth() + 1,
-          0,
-          23,
-          59,
-          59
-        );
     }
 
     return {
-      start: startDate.toISOString().split("T")[0],
-      end: endDate.toISOString().split("T")[0],
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0],
     };
   };
 
+  // Carregar dados do relatório
   const loadReportData = async () => {
     if (!user) return;
 
     setLoading(true);
-    setError(null);
-
     try {
       const { start, end } = getDateRange();
 
-      // Buscar dados em paralelo para melhor performance
-      const [despesasResult, receitasResult, poupancaResult] =
-        await Promise.all([
-          supabase
-            .from("despesas")
-            .select("*")
-            .eq("user_id", user.id)
-            .gte("data", start)
-            .lte("data", end)
-            .order("data", { ascending: false }),
+      // Buscar dados em paralelo
+      const [despesasResult, receitasResult, poupancaResult] = await Promise.all([
+        supabase
+          .from("despesas")
+          .select("*")
+          .eq("user_id", user.id)
+          .gte("data", start)
+          .lte("data", end)
+          .order("data", { ascending: false }),
 
-          supabase
-            .from("receitas")
-            .select("*")
-            .eq("user_id", user.id)
-            .gte("data", start)
-            .lte("data", end)
-            .order("data", { ascending: false }),
+        supabase
+          .from("receitas")
+          .select("*")
+          .eq("user_id", user.id)
+          .gte("data", start)
+          .lte("data", end)
+          .order("data", { ascending: false }),
 
-          supabase
-            .from("poupanca")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false }),
-        ]);
+        supabase
+          .from("poupanca")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
+      ]);
 
       if (despesasResult.error) throw despesasResult.error;
       if (receitasResult.error) throw receitasResult.error;
       if (poupancaResult.error) throw poupancaResult.error;
 
-      const despesas = despesasResult.data || [];
-      const receitas = receitasResult.data || [];
-      const poupancas = poupancaResult.data || [];
-
-      // Calcular totais
-      const totalDespesas = despesas.reduce(
-        (sum, item) => sum + Number(item.valor || 0),
-        0
-      );
-      const totalReceitas = receitas.reduce(
-        (sum, item) => sum + Number(item.valor || 0),
-        0
-      );
-      const totalPoupanca = poupancas.reduce(
-        (sum, item) => sum + Number(item.valor_atual || 0),
-        0
-      );
-      const saldoFinal = totalReceitas - totalDespesas;
-
-      // Agrupar por categoria
-      const despesasPorCategoria = processCategories(despesas, totalDespesas);
-      const receitasPorCategoria = processCategories(receitas, totalReceitas);
-
-      // Evolução mensal
-      const evolucaoMensal = processMonthlyEvolution(receitas, despesas);
-
-      // Metas de poupança
-      const metasPoupanca = poupancas.map((meta) => ({
-        descricao: meta.descricao || "Sem descrição",
-        atual: Number(meta.valor_atual || 0),
-        objetivo: Number(meta.valor_objetivo || 1),
-        progresso: Math.min(
-          (Number(meta.valor_atual || 0) / Number(meta.valor_objetivo || 1)) *
-            100,
-          100
-        ),
+      // Processar transações
+      const despesas: Transaction[] = (despesasResult.data || []).map(d => ({
+        id: d.id,
+        descricao: d.descricao,
+        valor: Number(d.valor),
+        categoria: d.categoria || 'Outros',
+        data: d.data,
+        tipo: 'despesa' as const,
+        forma_pagamento: d.forma_pagamento,
+        recorrente: d.recorrente,
       }));
 
-      const metasAtingidas = metasPoupanca.filter(
-        (meta) => meta.progresso >= 100
-      ).length;
+      const receitas: Transaction[] = (receitasResult.data || []).map(r => ({
+        id: r.id,
+        descricao: r.descricao,
+        valor: Number(r.valor),
+        categoria: r.categoria || 'Outros',
+        data: r.data,
+        tipo: 'receita' as const,
+        recorrente: r.recorrente,
+      }));
 
-      const periodoLabels: Record<string, string> = {
-        current_month: "Mês Atual",
-        last_month: "Mês Passado",
-        last_3_months: "Últimos 3 Meses",
-        current_year: "Ano Atual",
-      };
+      const allTransactions = [...despesas, ...receitas].sort(
+        (a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()
+      );
 
-      setReportData({
+      // Processar metas de poupança
+      const goals: SavingsGoal[] = (poupancaResult.data || []).map(p => ({
+        id: p.id,
+        descricao: p.descricao,
+        valor_atual: Number(p.valor_atual || 0),
+        valor_objetivo: Number(p.valor_objetivo || 1),
+        progresso: Math.min((Number(p.valor_atual || 0) / Number(p.valor_objetivo || 1)) * 100, 100),
+        prazo: p.prazo,
+        categoria: p.categoria,
+      }));
+
+      // Calcular resumo
+      const totalReceitas = receitas.reduce((sum, t) => sum + t.valor, 0);
+      const totalDespesas = despesas.reduce((sum, t) => sum + t.valor, 0);
+      const totalPoupanca = goals.reduce((sum, g) => sum + g.valor_atual, 0);
+      const saldoAtual = totalReceitas - totalDespesas;
+      
+      // Calcular dias no período
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      const diasNoPeriodo = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+      
+      const mediaDiaria = (totalReceitas - totalDespesas) / diasNoPeriodo;
+      const projecaoMensal = mediaDiaria * 30;
+      const economiaPercentual = totalReceitas > 0 ? (saldoAtual / totalReceitas) * 100 : 0;
+
+      // Categoria mais frequente
+      const categoriasReceita = receitas.reduce((acc, t) => {
+        acc[t.categoria] = (acc[t.categoria] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const categoriasDespesa = despesas.reduce((acc, t) => {
+        acc[t.categoria] = (acc[t.categoria] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const principalReceita = Object.entries(categoriasReceita).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+      const principalDespesa = Object.entries(categoriasDespesa).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+
+      setSummary({
         totalReceitas,
         totalDespesas,
         totalPoupanca,
-        saldoFinal,
-        totalTransacoes: despesas.length + receitas.length,
-        totalMetas: poupancas.length,
-        metasAtingidas,
-        periodo: periodoLabels[selectedPeriod] || "Período",
-        despesasPorCategoria,
-        receitasPorCategoria,
-        evolucaoMensal,
-        metasPoupanca,
+        saldoAtual,
+        economiaPercentual,
+        mediaDiaria,
+        projecaoMensal,
+        totalTransacoes: allTransactions.length,
+        categoriasPrincipais: {
+          receita: principalReceita,
+          despesa: principalDespesa,
+        },
       });
+
+      setTransactions(allTransactions);
+      setSavingsGoals(goals);
     } catch (err) {
       console.error("Erro ao carregar relatório:", err);
-      setError("Erro ao carregar dados do relatório");
     } finally {
       setLoading(false);
       setIsRefreshing(false);
     }
   };
 
-  const processCategories = (items: any[], total: number): CategoryData[] => {
-    const categoryMap: Record<string, number> = {};
+  // Processar dados por categoria
+  const categoryData = useMemo(() => {
+    // Filtrar transações por tipo, considerando o filtro ativo
+    let despesasFiltered = transactions.filter(t => t.tipo === 'despesa');
+    let receitasFiltered = transactions.filter(t => t.tipo === 'receita');
 
-    items.forEach((item) => {
-      const categoria = item.categoria || "Outros";
-      categoryMap[categoria] =
-        (categoryMap[categoria] || 0) + Number(item.valor || 0);
-    });
+    // Aplicar filtro de tipo de transação se necessário
+    if (filters.tipoTransacao === 'despesas') {
+      receitasFiltered = [];
+    } else if (filters.tipoTransacao === 'receitas') {
+      despesasFiltered = [];
+    }
 
-    return Object.entries(categoryMap)
-      .map(([categoria, valor]) => ({
-        categoria,
-        valor,
-        percentual: total > 0 ? (valor / total) * 100 : 0,
-      }))
-      .sort((a, b) => b.valor - a.valor)
-      .slice(0, 5); // Limitar a 5 categorias principais
-  };
+    const processCategories = (items: Transaction[]): CategoryData[] => {
+      const categoryMap: Record<string, { total: number; count: number; transactions: Transaction[] }> = {};
+      const total = items.reduce((sum, t) => sum + t.valor, 0);
 
-  const processMonthlyEvolution = (
-    receitas: any[],
-    despesas: any[]
-  ): MonthlyEvolution[] => {
-    const monthMap: Record<string, { receitas: number; despesas: number }> = {};
-
-    receitas.forEach((item) => {
-      const mes = new Date(item.data).toLocaleDateString("pt-BR", {
-        month: "short",
-        year: "2-digit",
+      items.forEach(item => {
+        const categoria = item.categoria || 'Sem categoria';
+        if (!categoryMap[categoria]) {
+          categoryMap[categoria] = { total: 0, count: 0, transactions: [] };
+        }
+        categoryMap[categoria].total += item.valor;
+        categoryMap[categoria].count += 1;
+        categoryMap[categoria].transactions.push(item);
       });
-      if (!monthMap[mes]) monthMap[mes] = { receitas: 0, despesas: 0 };
-      monthMap[mes].receitas += Number(item.valor || 0);
+
+      return Object.entries(categoryMap)
+        .map(([categoria, data]) => ({
+          categoria,
+          valor: data.total,
+          percentual: total > 0 ? (data.total / total) * 100 : 0,
+          quantidade: data.count,
+          media: data.count > 0 ? data.total / data.count : 0,
+        }))
+        .sort((a, b) => b.valor - a.valor);
+    };
+
+    return {
+      despesas: processCategories(despesasFiltered),
+      receitas: processCategories(receitasFiltered),
+      todasCategorias: [...new Set([...despesasFiltered, ...receitasFiltered].map(t => t.categoria || 'Sem categoria'))],
+    };
+  }, [transactions, filters.tipoTransacao]);
+
+  // Processar evolução mensal
+  const monthlyEvolution = useMemo(() => {
+    const monthMap: Record<string, MonthlyData> = {};
+
+    transactions.forEach(t => {
+      const date = new Date(t.data);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      
+      if (!monthMap[monthKey]) {
+        monthMap[monthKey] = {
+          mes: date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }),
+          mesNumero: date.getMonth() + 1,
+          ano: date.getFullYear(),
+          receitas: 0,
+          despesas: 0,
+          saldo: 0,
+          quantidadeTransacoes: 0,
+        };
+      }
+
+      if (t.tipo === 'receita') {
+        monthMap[monthKey].receitas += t.valor;
+      } else {
+        monthMap[monthKey].despesas += t.valor;
+      }
+      monthMap[monthKey].quantidadeTransacoes += 1;
     });
 
-    despesas.forEach((item) => {
-      const mes = new Date(item.data).toLocaleDateString("pt-BR", {
-        month: "short",
-        year: "2-digit",
-      });
-      if (!monthMap[mes]) monthMap[mes] = { receitas: 0, despesas: 0 };
-      monthMap[mes].despesas += Number(item.valor || 0);
-    });
-
-    return Object.entries(monthMap)
-      .map(([mes, dados]) => ({
-        mes,
-        receitas: dados.receitas,
-        despesas: dados.despesas,
-        saldo: dados.receitas - dados.despesas,
+    return Object.values(monthMap)
+      .map(m => ({
+        ...m,
+        saldo: m.receitas - m.despesas,
       }))
       .sort((a, b) => {
-        const [mesA, anoA] = a.mes.split("/");
-        const [mesB, anoB] = b.mes.split("/");
-        return anoA.localeCompare(anoB) || mesA.localeCompare(mesB);
-      })
-      .slice(-6); // Últimos 6 meses
-  };
+        if (a.ano !== b.ano) return a.ano - b.ano;
+        return a.mesNumero - b.mesNumero;
+      });
+  }, [transactions]);
 
+  // Formatar moeda
   const formatCurrency = (value: number): string => {
     if (!showValues) return "R$ ••••••";
-
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
     }).format(value);
   };
 
-  const handlePrint = () => {
-    if (!reportData) return;
+  // Formatar número
+  const formatNumber = (value: number): string => {
+    return new Intl.NumberFormat("pt-BR").format(value);
+  };
 
-    const printData = {
-      ...reportData,
-      dataGeracao: new Date().toLocaleString("pt-BR"),
-      usuario: user?.email || "Usuário",
+  // Baixar relatório
+  const handleDownload = () => {
+    if (!summary) return;
+
+    const reportData = {
+      resumo: summary,
+      transacoes: transactions,
+      categorias: categoryData,
+      evolucao: monthlyEvolution,
+      metas: savingsGoals,
+      periodo: getDateRange(),
+      geradoEm: new Date().toISOString(),
     };
 
-    localStorage.setItem("printReportData", JSON.stringify(printData));
+    // Gerar CSV
+    const csvLines: string[] = [
+      'RELATÓRIO FINANCEIRO',
+      `Gerado em: ${new Date().toLocaleString('pt-BR')}`,
+      '',
+      'RESUMO',
+      `Total de Receitas,${summary.totalReceitas.toFixed(2)}`,
+      `Total de Despesas,${summary.totalDespesas.toFixed(2)}`,
+      `Saldo Atual,${summary.saldoAtual.toFixed(2)}`,
+      `Total em Poupança,${summary.totalPoupanca.toFixed(2)}`,
+      `Taxa de Economia,${summary.economiaPercentual.toFixed(1)}%`,
+      '',
+      'TRANSAÇÕES RECENTES',
+      'Data,Tipo,Categoria,Descrição,Valor',
+      ...transactions.slice(0, 50).map(t => 
+        `${new Date(t.data).toLocaleDateString('pt-BR')},${t.tipo},${t.categoria},"${t.descricao}",${t.valor.toFixed(2)}`
+      ),
+    ];
 
-    const printWindow = window.open("/relatorios/print", "_blank");
-    if (!printWindow) {
-      alert("Por favor, permita popups para imprimir o relatório.");
+    const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `relatorio_financeiro_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  // Compartilhar relatório
+  const handleShare = async () => {
+    if (!summary) return;
+
+    const shareData = {
+      title: 'Relatório Financeiro',
+      text: `Resumo Financeiro\n\nReceitas: ${formatCurrency(summary.totalReceitas)}\nDespesas: ${formatCurrency(summary.totalDespesas)}\nSaldo: ${formatCurrency(summary.saldoAtual)}\n\nTaxa de economia: ${summary.economiaPercentual.toFixed(1)}%`,
+    };
+
+    if (navigator.share && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.log('Compartilhamento cancelado');
+      }
+    } else {
+      // Fallback: copiar para clipboard
+      navigator.clipboard.writeText(shareData.text);
+      alert('Dados copiados para a área de transferência!');
     }
   };
 
-  const handleDownload = async () => {
-    if (!reportData) return;
-
-    try {
-      // Criar conteúdo CSV
-      const csvContent = generateCSV(reportData);
-
-      // Criar blob e download
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-
-      link.setAttribute("href", url);
-      link.setAttribute(
-        "download",
-        `relatorio_financeiro_${new Date().toISOString().split("T")[0]}.csv`
-      );
-      link.style.visibility = "hidden";
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error("Erro ao gerar download:", err);
-      alert("Erro ao gerar arquivo para download");
-    }
-  };
-
-  const generateCSV = (data: ReportData): string => {
-    const lines: string[] = [];
-
-    // Cabeçalho
-    lines.push("RELATÓRIO FINANCEIRO");
-    lines.push(`Período: ${data.periodo}`);
-    lines.push(`Data de Geração: ${new Date().toLocaleString("pt-BR")}`);
-    lines.push("");
-
-    // Resumo
-    lines.push("RESUMO");
-    lines.push(`Total de Receitas,${data.totalReceitas.toFixed(2)}`);
-    lines.push(`Total de Despesas,${data.totalDespesas.toFixed(2)}`);
-    lines.push(`Saldo Final,${data.saldoFinal.toFixed(2)}`);
-    lines.push(`Total em Poupança,${data.totalPoupanca.toFixed(2)}`);
-    lines.push("");
-
-    // Despesas por categoria
-    if (data.despesasPorCategoria.length > 0) {
-      lines.push("DESPESAS POR CATEGORIA");
-      lines.push("Categoria,Valor,Percentual");
-      data.despesasPorCategoria.forEach((cat) => {
-        lines.push(
-          `${cat.categoria},${cat.valor.toFixed(2)},${cat.percentual.toFixed(
-            1
-          )}%`
-        );
-      });
-      lines.push("");
-    }
-
-    // Receitas por categoria
-    if (data.receitasPorCategoria.length > 0) {
-      lines.push("RECEITAS POR CATEGORIA");
-      lines.push("Categoria,Valor,Percentual");
-      data.receitasPorCategoria.forEach((cat) => {
-        lines.push(
-          `${cat.categoria},${cat.valor.toFixed(2)},${cat.percentual.toFixed(
-            1
-          )}%`
-        );
-      });
-      lines.push("");
-    }
-
-    // Evolução mensal
-    if (data.evolucaoMensal.length > 0) {
-      lines.push("EVOLUÇÃO MENSAL");
-      lines.push("Mês,Receitas,Despesas,Saldo");
-      data.evolucaoMensal.forEach((mes) => {
-        lines.push(
-          `${mes.mes},${mes.receitas.toFixed(2)},${mes.despesas.toFixed(
-            2
-          )},${mes.saldo.toFixed(2)}`
-        );
-      });
-    }
-
-    return lines.join("\n");
-  };
-
+  // Atualizar dados
   const handleRefresh = () => {
     setIsRefreshing(true);
     loadReportData();
@@ -456,47 +517,26 @@ export default function RelatoriosPage() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center">
-          <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Carregando relatórios...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Erro
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center max-w-md">
-          <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-          <h3 className="text-lg font-semibold mb-2">
-            Erro ao carregar relatórios
-          </h3>
-          <p className="text-sm text-muted-foreground mb-4">{error}</p>
-          <button
-            onClick={handleRefresh}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
-            Tentar Novamente
-          </button>
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Carregando relatório...</p>
         </div>
       </div>
     );
   }
 
   // Sem dados
-  if (!reportData || reportData.totalTransacoes === 0) {
+  if (!summary || summary.totalTransacoes === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center max-w-md">
-          <Wallet className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold mb-2">Nenhum dado encontrado</h3>
+        <div className="text-center max-w-sm">
+          <FileText className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Sem dados disponíveis</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Adicione transações para gerar relatórios
+            Adicione transações para visualizar seus relatórios financeiros
           </p>
           <button
             onClick={() => router.push("/dashboard")}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
           >
             Ir para Dashboard
           </button>
@@ -507,357 +547,398 @@ export default function RelatoriosPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+      <div className="max-w-7xl mx-auto p-4 lg:p-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold">
-              Relatórios Financeiros
-            </h1>
+            <h1 className="text-2xl font-bold">Relatórios</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Análise completa das suas finanças • {reportData.periodo}
+              Análise detalhada das suas finanças
             </p>
           </div>
 
-          {/* Controles */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Filtro de período */}
-            <div className="relative flex-1 min-w-[140px] max-w-[200px]">
-              <select
-                value={selectedPeriod}
-                onChange={(e) => setSelectedPeriod(e.target.value)}
-                className="w-full appearance-none rounded-lg border bg-background px-3 py-2 pr-8 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20"
-              >
-                <option value="current_month">Mês Atual</option>
-                <option value="last_month">Mês Passado</option>
-                <option value="last_3_months">Últimos 3 Meses</option>
-                <option value="current_year">Ano Atual</option>
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            </div>
+          {/* Ações */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowValues(!showValues)}
+              className="p-2 rounded-lg border hover:bg-accent transition-colors"
+              aria-label={showValues ? "Ocultar valores" : "Mostrar valores"}
+            >
+              {showValues ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            </button>
 
-            {/* Botões de ação */}
-            <div className="flex items-center gap-2 ml-auto">
-              <button
-                onClick={() => setShowValues(!showValues)}
-                className="p-2 rounded-lg border hover:bg-accent transition-colors"
-                aria-label={showValues ? "Ocultar valores" : "Mostrar valores"}
-              >
-                {showValues ? (
-                  <Eye className="h-4 w-4" />
-                ) : (
-                  <EyeOff className="h-4 w-4" />
-                )}
-              </button>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="p-2 rounded-lg border hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
 
-              <button
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                className="p-2 rounded-lg border hover:bg-accent transition-colors disabled:opacity-50"
-                aria-label="Atualizar dados"
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
-                />
-              </button>
+            <button
+              onClick={handleShare}
+              className="p-2 rounded-lg border hover:bg-accent transition-colors"
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
 
-              {/* Botão condicional: Impressão no desktop, Download no mobile */}
-              {isMobile ? (
-                <button
-                  onClick={handleDownload}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Baixar</span>
-                </button>
-              ) : (
-                <button
-                  onClick={handlePrint}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
-                >
-                  <Printer className="h-4 w-4" />
-                  <span>Imprimir</span>
-                </button>
-              )}
-            </div>
+            <button
+              onClick={handleDownload}
+              className="px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-2 text-sm"
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Exportar</span>
+            </button>
           </div>
         </div>
 
-        {/* Cards de resumo */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="bg-card rounded-lg p-4 border">
-            <div className="flex items-center justify-between gap-2">
-              <div className="p-2 rounded-lg bg-emerald-500/10">
-                <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-500" />
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Receitas</p>
-                <p className="text-base sm:text-lg font-bold text-emerald-500">
-                  {formatCurrency(reportData.totalReceitas)}
-                </p>
-              </div>
-            </div>
-          </div>
+        {/* Filtros */}
+        <div className="flex flex-wrap items-center gap-2 p-4 bg-card rounded-lg border">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <select
+            value={filters.periodo}
+            onChange={(e) => setFilters({ ...filters, periodo: e.target.value })}
+            className="flex-1 min-w-[120px] max-w-[200px] px-3 py-1.5 rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="hoje">Hoje</option>
+            <option value="semana">Última Semana</option>
+            <option value="mes_atual">Mês Atual</option>
+            <option value="mes_passado">Mês Passado</option>
+            <option value="3_meses">Últimos 3 Meses</option>
+            <option value="6_meses">Últimos 6 Meses</option>
+            <option value="ano">Este Ano</option>
+          </select>
 
-          <div className="bg-card rounded-lg p-4 border">
-            <div className="flex items-center justify-between gap-2">
-              <div className="p-2 rounded-lg bg-red-500/10">
-                <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Despesas</p>
-                <p className="text-base sm:text-lg font-bold text-red-500">
-                  {formatCurrency(reportData.totalDespesas)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-card rounded-lg p-4 border">
-            <div className="flex items-center justify-between gap-2">
-              <div
-                className={`p-2 rounded-lg ${
-                  reportData.saldoFinal >= 0
-                    ? "bg-emerald-500/10"
-                    : "bg-red-500/10"
-                }`}
-              >
-                <Wallet
-                  className={`h-4 w-4 sm:h-5 sm:w-5 ${
-                    reportData.saldoFinal >= 0
-                      ? "text-emerald-500"
-                      : "text-red-500"
-                  }`}
-                />
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Saldo</p>
-                <p
-                  className={`text-base sm:text-lg font-bold ${
-                    reportData.saldoFinal >= 0
-                      ? "text-emerald-500"
-                      : "text-red-500"
-                  }`}
-                >
-                  {formatCurrency(reportData.saldoFinal)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-card rounded-lg p-4 border">
-            <div className="flex items-center justify-between gap-2">
-              <div className="p-2 rounded-lg bg-blue-500/10">
-                <PiggyBank className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Poupança</p>
-                <p className="text-base sm:text-lg font-bold text-blue-500">
-                  {formatCurrency(reportData.totalPoupanca)}
-                </p>
-              </div>
-            </div>
-          </div>
+          <select
+            value={filters.tipoTransacao}
+            onChange={(e) => setFilters({ ...filters, tipoTransacao: e.target.value as any })}
+            className="min-w-[100px] max-w-[150px] px-3 py-1.5 rounded-md border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="todas">Todas</option>
+            <option value="receitas">Receitas</option>
+            <option value="despesas">Despesas</option>
+          </select>
         </div>
 
-        {/* Estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-card rounded-lg p-4 border">
-            <h3 className="font-semibold mb-3">Transações</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total:</span>
-                <span className="font-medium">
-                  {reportData.totalTransacoes}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Período:</span>
-                <span className="font-medium">{reportData.periodo}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-card rounded-lg p-4 border">
-            <h3 className="font-semibold mb-3">Metas</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total:</span>
-                <span className="font-medium">{reportData.totalMetas}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Atingidas:</span>
-                <span className="font-medium text-emerald-600">
-                  {reportData.metasAtingidas}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-card rounded-lg p-4 border">
-            <h3 className="font-semibold mb-3">Análise</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Economia:</span>
-                <span
-                  className={`font-medium ${
-                    reportData.saldoFinal >= 0
-                      ? "text-emerald-600"
-                      : "text-red-600"
-                  }`}
-                >
-                  {reportData.totalReceitas > 0
-                    ? `${(
-                        (reportData.saldoFinal / reportData.totalReceitas) *
-                        100
-                      ).toFixed(1)}%`
-                    : "0%"}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Maior gasto:</span>
-                <span className="font-medium truncate ml-2">
-                  {reportData.despesasPorCategoria[0]?.categoria || "N/A"}
-                </span>
-              </div>
-            </div>
-          </div>
+        {/* Tabs */}
+        <div className="flex gap-1 p-1 bg-muted rounded-lg">
+          {(['resumo', 'detalhes', 'analise'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                activeTab === tab
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
         </div>
 
-        {/* Despesas por categoria */}
-        {reportData.despesasPorCategoria.length > 0 && (
-          <div className="bg-card rounded-lg border">
-            <div className="p-4 border-b">
-              <h3 className="font-semibold">Despesas por Categoria</h3>
+        {/* Conteúdo baseado na tab ativa */}
+        {activeTab === 'resumo' && (
+          <div className="space-y-6">
+            {/* Cards principais */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <MetricCard
+                icon={TrendingUp}
+                label="Receitas"
+                value={formatCurrency(summary.totalReceitas)}
+                color="success"
+                showValue={showValues}
+                trend={monthlyEvolution.length >= 2 ? {
+                  value: ((monthlyEvolution[monthlyEvolution.length - 1].receitas / monthlyEvolution[monthlyEvolution.length - 2].receitas - 1) * 100),
+                  isPositive: monthlyEvolution[monthlyEvolution.length - 1].receitas > monthlyEvolution[monthlyEvolution.length - 2].receitas
+                } : undefined}
+              />
+              
+              <MetricCard
+                icon={TrendingDown}
+                label="Despesas"
+                value={formatCurrency(summary.totalDespesas)}
+                color="danger"
+                showValue={showValues}
+                trend={monthlyEvolution.length >= 2 ? {
+                  value: ((monthlyEvolution[monthlyEvolution.length - 1].despesas / monthlyEvolution[monthlyEvolution.length - 2].despesas - 1) * 100),
+                  isPositive: monthlyEvolution[monthlyEvolution.length - 1].despesas < monthlyEvolution[monthlyEvolution.length - 2].despesas
+                } : undefined}
+              />
+              
+              <MetricCard
+                icon={Wallet}
+                label="Saldo"
+                value={formatCurrency(summary.saldoAtual)}
+                color={summary.saldoAtual >= 0 ? "success" : "danger"}
+                showValue={showValues}
+              />
+              
+              <MetricCard
+                icon={PiggyBank}
+                label="Poupança"
+                value={formatCurrency(summary.totalPoupanca)}
+                color="info"
+                showValue={showValues}
+              />
             </div>
-            <div className="p-4 space-y-3">
-              {reportData.despesasPorCategoria.map((cat, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between gap-4"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-3 h-3 rounded-full bg-red-500 flex-shrink-0" />
-                    <span className="text-sm font-medium truncate">
-                      {cat.categoria}
-                    </span>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className="text-sm font-semibold">
-                      {formatCurrency(cat.valor)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {cat.percentual.toFixed(1)}%
-                    </div>
+
+            {/* Indicadores secundários */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="bg-card rounded-lg p-3 border">
+                <div className="flex items-center gap-2 mb-1">
+                  <Target className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Taxa de Economia</span>
+                </div>
+                <p className={`text-lg font-semibold ${summary.economiaPercentual >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                  {summary.economiaPercentual.toFixed(1)}%
+                </p>
+              </div>
+
+              <div className="bg-card rounded-lg p-3 border">
+                <div className="flex items-center gap-2 mb-1">
+                  <Activity className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Média Diária</span>
+                </div>
+                <p className="text-lg font-semibold">
+                  {showValues ? formatCurrency(summary.mediaDiaria) : "••••"}
+                </p>
+              </div>
+
+              <div className="bg-card rounded-lg p-3 border">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Projeção Mensal</span>
+                </div>
+                <p className="text-lg font-semibold">
+                  {showValues ? formatCurrency(summary.projecaoMensal) : "••••"}
+                </p>
+              </div>
+
+              <div className="bg-card rounded-lg p-3 border">
+                <div className="flex items-center gap-2 mb-1">
+                  <FileText className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Transações</span>
+                </div>
+                <p className="text-lg font-semibold">
+                  {formatNumber(summary.totalTransacoes)}
+                </p>
+              </div>
+            </div>
+
+            {/* Evolução mensal */}
+            {monthlyEvolution.length > 0 && (
+              <div className="bg-card rounded-lg border">
+                <div className="p-4 border-b">
+                  <h3 className="font-semibold">Evolução Mensal</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Últimos {monthlyEvolution.length} meses</p>
+                </div>
+                <div className="p-4">
+                  <div className="space-y-4">
+                    {monthlyEvolution.slice(-6).map((month, idx) => (
+                      <div key={idx} className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium">{month.mes}</span>
+                          <div className="flex items-center gap-4">
+                            <span className="text-emerald-500">
+                              {showValues ? formatCurrency(month.receitas) : "••••"}
+                            </span>
+                            <span className="text-red-500">
+                              {showValues ? formatCurrency(month.despesas) : "••••"}
+                            </span>
+                            <span className={`font-semibold ${month.saldo >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                              {showValues ? formatCurrency(month.saldo) : "••••"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="relative h-2 bg-muted rounded-full overflow-hidden">
+                          <div 
+                            className="absolute h-full bg-emerald-500/20"
+                            style={{ width: '100%' }}
+                          />
+                          <div 
+                            className="absolute h-full bg-emerald-500"
+                            style={{ width: `${month.receitas > 0 ? (month.receitas / (month.receitas + month.despesas)) * 100 : 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {/* Metas de poupança */}
+            {savingsGoals.length > 0 && (
+              <div className="bg-card rounded-lg border">
+                <div className="p-4 border-b flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">Metas de Poupança</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {savingsGoals.filter(g => g.progresso >= 100).length} de {savingsGoals.length} atingidas
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-blue-500">
+                      {Math.round(savingsGoals.reduce((sum, g) => sum + g.progresso, 0) / savingsGoals.length)}%
+                    </p>
+                    <p className="text-xs text-muted-foreground">Progresso médio</p>
+                  </div>
+                </div>
+                <div className="p-4 space-y-3">
+                  {savingsGoals.slice(0, 3).map((goal) => (
+                    <div key={goal.id} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{goal.descricao}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {showValues ? formatCurrency(goal.valor_atual) : "••••"} de {showValues ? formatCurrency(goal.valor_objetivo) : "••••"}
+                          </p>
+                        </div>
+                        <span className={`text-sm font-semibold ${goal.progresso >= 100 ? 'text-emerald-500' : 'text-blue-500'}`}>
+                          {goal.progresso.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-500 ${
+                            goal.progresso >= 100 ? 'bg-emerald-500' : 'bg-blue-500'
+                          }`}
+                          style={{ width: `${Math.min(goal.progresso, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Receitas por categoria */}
-        {reportData.receitasPorCategoria.length > 0 && (
-          <div className="bg-card rounded-lg border">
-            <div className="p-4 border-b">
-              <h3 className="font-semibold">Receitas por Categoria</h3>
-            </div>
-            <div className="p-4 space-y-3">
-              {reportData.receitasPorCategoria.map((cat, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between gap-4"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-3 h-3 rounded-full bg-emerald-500 flex-shrink-0" />
-                    <span className="text-sm font-medium truncate">
-                      {cat.categoria}
-                    </span>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className="text-sm font-semibold">
-                      {formatCurrency(cat.valor)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {cat.percentual.toFixed(1)}%
-                    </div>
+        {activeTab === 'detalhes' && (
+          <div className="space-y-6">
+            {/* Categorias de Despesas */}
+            {categoryData.despesas.length > 0 && (
+              <div className="bg-card rounded-lg border">
+                <div className="p-4 border-b">
+                  <h3 className="font-semibold">Despesas por Categoria</h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {categoryData.despesas.length} categorias • {transactions.filter(t => t.tipo === 'despesa').length} transações
+                  </p>
+                </div>
+                <div className="p-4">
+                  <div className="space-y-3">
+                    {categoryData.despesas.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Nenhuma despesa encontrada no período selecionado
+                      </p>
+                    ) : (
+                      categoryData.despesas.map((cat, idx) => (
+                        <div key={`${cat.categoria}-${idx}`} className="flex items-center gap-3">
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">{cat.categoria}</span>
+                              <span className="text-sm font-semibold">
+                                {showValues ? formatCurrency(cat.valor) : "••••"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{cat.quantidade} {cat.quantidade === 1 ? 'transação' : 'transações'}</span>
+                              <span>{cat.percentual.toFixed(1)}%</span>
+                            </div>
+                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-red-500 transition-all duration-500"
+                                style={{ width: `${cat.percentual}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
+            )}
 
-        {/* Evolução mensal */}
-        {reportData.evolucaoMensal.length > 0 && (
-          <div className="bg-card rounded-lg border">
-            <div className="p-4 border-b">
-              <h3 className="font-semibold">Evolução Mensal</h3>
-            </div>
-            <div className="p-4">
-              <div className="space-y-2">
-                {/* Header da tabela - apenas no desktop */}
-                <div className="hidden sm:grid sm:grid-cols-4 text-xs text-muted-foreground font-medium pb-2 border-b">
-                  <div>Mês</div>
-                  <div className="text-right">Receitas</div>
-                  <div className="text-right">Despesas</div>
-                  <div className="text-right">Saldo</div>
+            {/* Categorias de Receitas */}
+            {categoryData.receitas.length > 0 && (
+              <div className="bg-card rounded-lg border">
+                <div className="p-4 border-b">
+                  <h3 className="font-semibold">Receitas por Categoria</h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {categoryData.receitas.length} categorias • {transactions.filter(t => t.tipo === 'receita').length} transações
+                  </p>
                 </div>
+                <div className="p-4">
+                  <div className="space-y-3">
+                    {categoryData.receitas.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        Nenhuma receita encontrada no período selecionado
+                      </p>
+                    ) : (
+                      categoryData.receitas.map((cat, idx) => (
+                        <div key={`${cat.categoria}-${idx}`} className="flex items-center gap-3">
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">{cat.categoria}</span>
+                              <span className="text-sm font-semibold">
+                                {showValues ? formatCurrency(cat.valor) : "••••"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>{cat.quantidade} {cat.quantidade === 1 ? 'transação' : 'transações'}</span>
+                              <span>{cat.percentual.toFixed(1)}%</span>
+                            </div>
+                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-emerald-500 transition-all duration-500"
+                                style={{ width: `${cat.percentual}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
-                {/* Dados */}
-                {reportData.evolucaoMensal.map((mes, idx) => (
-                  <div key={idx} className="py-2 border-b last:border-0">
-                    {/* Mobile: layout em blocos */}
-                    <div className="sm:hidden space-y-1">
-                      <div className="font-medium text-sm">{mes.mes}</div>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div>
-                          <span className="text-muted-foreground">
-                            Receitas:
+            {/* Transações Recentes */}
+            <div className="bg-card rounded-lg border">
+              <div className="p-4 border-b">
+                <h3 className="font-semibold">Transações Recentes</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Últimas {Math.min(10, transactions.length)} de {transactions.length} transações
+                </p>
+              </div>
+              <div className="divide-y">
+                {transactions.slice(0, 10).map((transaction) => (
+                  <div key={transaction.id} className="p-4 hover:bg-accent/50 transition-colors">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{transaction.descricao}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(transaction.data).toLocaleDateString('pt-BR')}
                           </span>
-                          <div className="font-medium text-emerald-600">
-                            {formatCurrency(mes.receitas)}
-                          </div>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">
-                            Despesas:
+                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-muted">
+                            {transaction.categoria}
                           </span>
-                          <div className="font-medium text-red-600">
-                            {formatCurrency(mes.despesas)}
-                          </div>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Saldo:</span>
-                          <div
-                            className={`font-medium ${
-                              mes.saldo >= 0
-                                ? "text-emerald-600"
-                                : "text-red-600"
-                            }`}
-                          >
-                            {formatCurrency(mes.saldo)}
-                          </div>
+                          {transaction.recorrente && (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500">
+                              Recorrente
+                            </span>
+                          )}
                         </div>
                       </div>
-                    </div>
-
-                    {/* Desktop: layout em grid */}
-                    <div className="hidden sm:grid sm:grid-cols-4 text-sm">
-                      <div className="font-medium">{mes.mes}</div>
-                      <div className="text-right text-emerald-600">
-                        {formatCurrency(mes.receitas)}
-                      </div>
-                      <div className="text-right text-red-600">
-                        {formatCurrency(mes.despesas)}
-                      </div>
-                      <div
-                        className={`text-right font-medium ${
-                          mes.saldo >= 0 ? "text-emerald-600" : "text-red-600"
-                        }`}
-                      >
-                        {formatCurrency(mes.saldo)}
-                      </div>
+                      <span className={`text-sm font-semibold ${
+                        transaction.tipo === 'receita' ? 'text-emerald-500' : 'text-red-500'
+                      }`}>
+                        {transaction.tipo === 'receita' ? '+' : '-'}
+                        {showValues ? formatCurrency(transaction.valor).replace('R$', '').trim() : "••••"}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -866,37 +947,202 @@ export default function RelatoriosPage() {
           </div>
         )}
 
-        {/* Metas de poupança */}
-        {reportData.metasPoupanca.length > 0 && (
-          <div className="bg-card rounded-lg border">
-            <div className="p-4 border-b">
-              <h3 className="font-semibold">Metas de Poupança</h3>
-            </div>
-            <div className="p-4 space-y-4">
-              {reportData.metasPoupanca.slice(0, 5).map((meta, idx) => (
-                <div key={idx} className="space-y-2">
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="text-sm font-medium truncate">
-                      {meta.descricao}
-                    </span>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">
-                      {meta.progresso.toFixed(0)}%
-                    </span>
+        {activeTab === 'analise' && (
+          <div className="space-y-6">
+            {/* Insights */}
+            <div className="bg-card rounded-lg border">
+              <div className="p-4 border-b">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Info className="h-4 w-4" />
+                  Insights Financeiros
+                </h3>
+              </div>
+              <div className="p-4 space-y-4">
+                {/* Taxa de economia */}
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg ${
+                    summary.economiaPercentual >= 20 ? 'bg-emerald-500/10' : 
+                    summary.economiaPercentual >= 10 ? 'bg-amber-500/10' : 'bg-red-500/10'
+                  }`}>
+                    <Target className={`h-4 w-4 ${
+                      summary.economiaPercentual >= 20 ? 'text-emerald-500' : 
+                      summary.economiaPercentual >= 10 ? 'text-amber-500' : 'text-red-500'
+                    }`} />
                   </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all duration-300 ${
-                        meta.progresso >= 100 ? "bg-emerald-500" : "bg-blue-500"
-                      }`}
-                      style={{ width: `${Math.min(meta.progresso, 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{formatCurrency(meta.atual)}</span>
-                    <span>{formatCurrency(meta.objetivo)}</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Taxa de Economia</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {summary.economiaPercentual >= 20 
+                        ? `Excelente! Você está economizando ${summary.economiaPercentual.toFixed(1)}% da sua receita.`
+                        : summary.economiaPercentual >= 10
+                        ? `Bom! Você está economizando ${summary.economiaPercentual.toFixed(1)}% da sua receita. Tente alcançar 20%.`
+                        : `Atenção! Você está economizando apenas ${summary.economiaPercentual.toFixed(1)}% da sua receita. Recomenda-se pelo menos 10%.`
+                      }
+                    </p>
                   </div>
                 </div>
-              ))}
+
+                {/* Maior categoria de gasto */}
+                {categoryData.despesas.length > 0 && (
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-amber-500/10">
+                      <TrendingUp className="h-4 w-4 text-amber-500" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Maior Categoria de Despesa</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {categoryData.despesas[0].categoria} representa {categoryData.despesas[0].percentual.toFixed(1)}% dos seus gastos
+                        ({showValues ? formatCurrency(categoryData.despesas[0].valor) : "••••"}).
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tendência mensal */}
+                {monthlyEvolution.length >= 2 && (
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-lg ${
+                      monthlyEvolution[monthlyEvolution.length - 1].saldo > monthlyEvolution[monthlyEvolution.length - 2].saldo
+                        ? 'bg-emerald-500/10' : 'bg-red-500/10'
+                    }`}>
+                      <Activity className={`h-4 w-4 ${
+                        monthlyEvolution[monthlyEvolution.length - 1].saldo > monthlyEvolution[monthlyEvolution.length - 2].saldo
+                          ? 'text-emerald-500' : 'text-red-500'
+                      }`} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Tendência Mensal</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {monthlyEvolution[monthlyEvolution.length - 1].saldo > monthlyEvolution[monthlyEvolution.length - 2].saldo
+                          ? `Seu saldo melhorou em relação ao mês anterior! Continue assim.`
+                          : `Seu saldo piorou em relação ao mês anterior. Revise seus gastos.`
+                        }
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Projeção */}
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg ${
+                    summary.projecaoMensal >= 0 ? 'bg-blue-500/10' : 'bg-red-500/10'
+                  }`}>
+                    <TrendingUp className={`h-4 w-4 ${
+                      summary.projecaoMensal >= 0 ? 'text-blue-500' : 'text-red-500'
+                    }`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Projeção para 30 dias</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Mantendo o ritmo atual, você {summary.projecaoMensal >= 0 ? 'economizará' : 'terá um déficit de'} {' '}
+                      {showValues ? formatCurrency(Math.abs(summary.projecaoMensal)) : "••••"} nos próximos 30 dias.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Comparativo de Períodos */}
+            {monthlyEvolution.length >= 2 && (
+              <div className="bg-card rounded-lg border">
+                <div className="p-4 border-b">
+                  <h3 className="font-semibold">Comparativo de Períodos</h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Variação entre {monthlyEvolution[monthlyEvolution.length - 2].mes} e {monthlyEvolution[monthlyEvolution.length - 1].mes}
+                  </p>
+                </div>
+                <div className="p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Receitas</p>
+                      <p className="text-lg font-semibold text-emerald-500">
+                        {((monthlyEvolution[monthlyEvolution.length - 1].receitas / monthlyEvolution[monthlyEvolution.length - 2].receitas - 1) * 100).toFixed(1)}%
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {showValues ? formatCurrency(monthlyEvolution[monthlyEvolution.length - 1].receitas - monthlyEvolution[monthlyEvolution.length - 2].receitas) : "••••"}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Despesas</p>
+                      <p className="text-lg font-semibold text-red-500">
+                        {((monthlyEvolution[monthlyEvolution.length - 1].despesas / monthlyEvolution[monthlyEvolution.length - 2].despesas - 1) * 100).toFixed(1)}%
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {showValues ? formatCurrency(monthlyEvolution[monthlyEvolution.length - 1].despesas - monthlyEvolution[monthlyEvolution.length - 2].despesas) : "••••"}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Saldo</p>
+                      <p className={`text-lg font-semibold ${
+                        monthlyEvolution[monthlyEvolution.length - 1].saldo > monthlyEvolution[monthlyEvolution.length - 2].saldo
+                          ? 'text-emerald-500' : 'text-red-500'
+                      }`}>
+                        {monthlyEvolution[monthlyEvolution.length - 2].saldo !== 0
+                          ? ((monthlyEvolution[monthlyEvolution.length - 1].saldo / monthlyEvolution[monthlyEvolution.length - 2].saldo - 1) * 100).toFixed(1)
+                          : '∞'}%
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {showValues ? formatCurrency(monthlyEvolution[monthlyEvolution.length - 1].saldo - monthlyEvolution[monthlyEvolution.length - 2].saldo) : "••••"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Recomendações */}
+            <div className="bg-card rounded-lg border">
+              <div className="p-4 border-b">
+                <h3 className="font-semibold">Recomendações Personalizadas</h3>
+              </div>
+              <div className="p-4 space-y-3">
+                {summary.economiaPercentual < 10 && (
+                  <div className="flex items-start gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-amber-500 mt-1.5" />
+                    <p className="text-sm text-muted-foreground">
+                      Tente aumentar sua taxa de economia para pelo menos 10% reduzindo gastos em {categoryData.despesas[0]?.categoria || 'categorias não essenciais'}.
+                    </p>
+                  </div>
+                )}
+                
+                {categoryData.despesas[0]?.percentual > 40 && (
+                  <div className="flex items-start gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-amber-500 mt-1.5" />
+                    <p className="text-sm text-muted-foreground">
+                      A categoria "{categoryData.despesas[0].categoria}" representa mais de 40% dos seus gastos. Considere revisar esses gastos.
+                    </p>
+                  </div>
+                )}
+
+                {savingsGoals.length === 0 && (
+                  <div className="flex items-start gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-blue-500 mt-1.5" />
+                    <p className="text-sm text-muted-foreground">
+                      Defina metas de poupança para ter objetivos financeiros claros e acompanhar seu progresso.
+                    </p>
+                  </div>
+                )}
+
+                {summary.projecaoMensal < 0 && (
+                  <div className="flex items-start gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-red-500 mt-1.5" />
+                    <p className="text-sm text-muted-foreground">
+                      Sua projeção indica déficit. Revise seus gastos recorrentes e busque fontes adicionais de receita.
+                    </p>
+                  </div>
+                )}
+
+                {transactions.filter(t => t.recorrente).length === 0 && (
+                  <div className="flex items-start gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-blue-500 mt-1.5" />
+                    <p className="text-sm text-muted-foreground">
+                      Marque suas transações recorrentes para ter uma visão mais clara dos seus compromissos fixos.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
